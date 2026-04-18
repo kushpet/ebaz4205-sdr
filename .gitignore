@@ -39,3 +39,10 @@
 
 # debug information files
 *.dwo
+
+# logs
+*.jou
+*.log
+
+# Vivado Project
+hardware/ebaz4205_sdr_vivado/*
