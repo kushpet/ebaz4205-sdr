@@ -2,46 +2,46 @@
 ## Все пины взяты из EBAZ4205-ADC-DAC.md, банки PL с VCCO=3.3В.
 
 ## DAC (DATA1, DATA2)
-set_property PACKAGE_PIN H16 [get_ports DAC0]
-set_property PACKAGE_PIN B19 [get_ports DAC1]
-set_property PACKAGE_PIN B20 [get_ports DAC2]
-set_property PACKAGE_PIN C20 [get_ports DAC3]
-set_property PACKAGE_PIN D18 [get_ports DAC4]
-set_property PACKAGE_PIN H17 [get_ports DAC5]
-set_property PACKAGE_PIN D19 [get_ports DAC6]
-set_property PACKAGE_PIN D20 [get_ports DAC7]
-set_property PACKAGE_PIN E19 [get_ports DAC8]
-set_property PACKAGE_PIN H18 [get_ports DAC9]
-set_property PACKAGE_PIN K17 [get_ports DAC10]
-set_property PACKAGE_PIN F20 [get_ports DAC11]
-set_property PACKAGE_PIN F19 [get_ports DAC12]
-set_property PACKAGE_PIN G20 [get_ports DAC13]
+set_property PACKAGE_PIN H16 [get_ports DAC[13]]
+set_property PACKAGE_PIN B19 [get_ports DAC[12]]
+set_property PACKAGE_PIN B20 [get_ports DAC[11]]
+set_property PACKAGE_PIN C20 [get_ports DAC[10]]
+set_property PACKAGE_PIN D18 [get_ports DAC[9]]
+set_property PACKAGE_PIN H17 [get_ports DAC[8]]
+set_property PACKAGE_PIN D19 [get_ports DAC[7]]
+set_property PACKAGE_PIN D20 [get_ports DAC[6]]
+set_property PACKAGE_PIN E19 [get_ports DAC[5]]
+set_property PACKAGE_PIN H18 [get_ports DAC[4]]
+set_property PACKAGE_PIN K17 [get_ports DAC[3]]
+set_property PACKAGE_PIN F20 [get_ports DAC[2]]
+set_property PACKAGE_PIN F19 [get_ports DAC[1]]
+set_property PACKAGE_PIN G20 [get_ports DAC[0]]
 
 set_property PACKAGE_PIN A20 [get_ports CLK_DAC]
 set_property PACKAGE_PIN J18 [get_ports PD]
 
 ## ADC (DATA3)
-set_property PACKAGE_PIN N20 [get_ports ADC0]
-set_property PACKAGE_PIN P18 [get_ports ADC1]
-set_property PACKAGE_PIN M17 [get_ports ADC2]
-set_property PACKAGE_PIN N17 [get_ports ADC3]
-set_property PACKAGE_PIN R19 [get_ports ADC4]
-set_property PACKAGE_PIN P20 [get_ports ADC5]
-set_property PACKAGE_PIN T20 [get_ports ADC6]
-set_property PACKAGE_PIN R18 [get_ports ADC7]
-set_property PACKAGE_PIN T19 [get_ports ADC8]
-set_property PACKAGE_PIN P19 [get_ports ADC9]
-set_property PACKAGE_PIN U19 [get_ports ADC10]
-set_property PACKAGE_PIN U20 [get_ports ADC11]
+set_property PACKAGE_PIN N20 [get_ports ADC[0]]
+set_property PACKAGE_PIN P18 [get_ports ADC[1]]
+set_property PACKAGE_PIN M17 [get_ports ADC[2]]
+set_property PACKAGE_PIN N17 [get_ports ADC[3]]
+set_property PACKAGE_PIN R19 [get_ports ADC[4]]
+set_property PACKAGE_PIN P20 [get_ports ADC[5]]
+set_property PACKAGE_PIN T20 [get_ports ADC[6]]
+set_property PACKAGE_PIN R18 [get_ports ADC[7]]
+set_property PACKAGE_PIN T19 [get_ports ADC[8]]
+set_property PACKAGE_PIN P19 [get_ports ADC[9]]
+set_property PACKAGE_PIN U19 [get_ports ADC[10]]
+set_property PACKAGE_PIN U20 [get_ports ADC[11]]
 
 set_property PACKAGE_PIN V20 [get_ports OTR]
 set_property PACKAGE_PIN M19 [get_ports CLK_ADC]
 
 ## IOSTANDARD для этих сигналов
 set_property IOSTANDARD LVCMOS33 [get_ports { \
-    DAC0 DAC1 DAC2 DAC3 DAC4 DAC5 DAC6 DAC7 DAC8 DAC9 DAC10 DAC11 DAC12 DAC13 \
+    DAC[0] DAC[1] DAC[2] DAC[3] DAC[4] DAC[5] DAC[6] DAC[7] DAC[8] DAC[9] DAC[10] DAC[11] DAC[12] DAC[13] \
     CLK_DAC PD \
-    ADC0 ADC1 ADC2 ADC3 ADC4 ADC5 ADC6 ADC7 ADC8 ADC9 ADC10 ADC11 \
+    ADC[0] ADC[1] ADC[2] ADC[3] ADC[4] ADC[5] ADC[6] ADC[7] ADC[8] ADC[9] ADC[10] ADC[11] \
     OTR CLK_ADC \
 }]
 
