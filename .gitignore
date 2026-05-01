@@ -46,3 +46,7 @@
 
 # Vivado Project
 hardware/ebaz4205_sdr_vivado/*
+
+# Python bytecode
+__pycache__/
+*.pyc
