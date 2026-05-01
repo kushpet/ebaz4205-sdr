@@ -50,3 +50,8 @@ hardware/ebaz4205_sdr_vivado/*
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Vitis workspace + Xilinx IDE state + exported hardware handoff
+firmware/vitis_ws/
+hardware/*.xsa
+.Xil/

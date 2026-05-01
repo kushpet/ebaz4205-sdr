@@ -59,8 +59,10 @@ static void main_thread(void *arg)
     netif_set_up(&s_netif);
 
     // Spawn the lwIP receive thread (drains the EMAC RX ring into pbufs)
-    sys_thread_new("xemacif_input", xemacif_input_thread, &s_netif,
-                   THREAD_STACKSIZE, DEFAULT_THREAD_PRIO);
+    // xemacif_input_thread's prototype is void (*)(struct netif *), lwIP wants
+    // void (*)(void *). Cast — both ABIs match on this platform.
+    sys_thread_new("xemacif_input", (lwip_thread_fn)xemacif_input_thread,
+                   &s_netif, TCPIP_THREAD_STACKSIZE, TCPIP_THREAD_PRIO);
 
     // Initialise the PHY now that the MAC is up (MDIO requires GEM0 enabled)
     ip101g_init(IP101G_PHY_ADDR_DEFAULT);

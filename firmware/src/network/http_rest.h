@@ -1,6 +1,8 @@
 #ifndef EBAZ_HTTP_REST_H
 #define EBAZ_HTTP_REST_H
 
+#include <stdint.h>
+
 // Minimal HTTP/1.0 server on TCP port 8888 for SDRAngel-style control.
 // Endpoints implemented:
 //   GET  /sdrangel

@@ -18,7 +18,11 @@ int udp_rx_open(uint16_t port)
 int udp_rx_recv_block(void *out_block512, uint32_t timeout_ms)
 {
     if (!s_conn) return -1;
+#if LWIP_SO_RCVTIMEO
     netconn_set_recvtimeout(s_conn, timeout_ms);
+#else
+    (void)timeout_ms;       // recv blocks indefinitely if SO_RCVTIMEO is off
+#endif
     struct netbuf *nb = NULL;
     if (netconn_recv(s_conn, &nb) != ERR_OK) return -1;
     void *data; u16_t len;
