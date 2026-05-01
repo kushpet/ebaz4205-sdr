@@ -81,4 +81,10 @@ set_property PACKAGE_PIN W14 [get_ports LED_RED]     ;# красный LED
 
 set_property IOSTANDARD LVCMOS33 [get_ports { LED_GREEN LED_RED }]
 
+## EBAZ4205: PHY refclk to IP101G XI (pin U18, 25 MHz)
+set_property PACKAGE_PIN U18 [get_ports PHY_REFCLK_25MHZ]
+set_property IOSTANDARD LVCMOS33 [get_ports PHY_REFCLK_25MHZ]
 
+## Generated clocks (declared so timing closure is checked)
+## clk_60mhz, clk_25mhz are generated inside the BD's MMCM (clk_60mhz module).
+## Vivado picks them up from the MMCM primitive automatically.
