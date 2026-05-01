@@ -45,34 +45,9 @@ set_property IOSTANDARD LVCMOS33 [get_ports { \
     OTR CLK_ADC \
 }]
 
-## EBAZ4205: GEM0 MII (через IP101GA U24, банк 34)
-
-## TX
-set_property PACKAGE_PIN W19 [get_ports GEM0_TXEN0]   	;# TXEN0
-set_property PACKAGE_PIN W18 [get_ports GEM0_TXD0[0]]   	;# TXD0[0]
-set_property PACKAGE_PIN Y18 [get_ports GEM0_TXD0[1]]   	;# TXD0[1]
-set_property PACKAGE_PIN V18 [get_ports GEM0_TXD0[2]]   	;# TXD0[2]
-set_property PACKAGE_PIN Y19 [get_ports GEM0_TXD0[3]]	;# TXD0[3]
-set_property PACKAGE_PIN U15 [get_ports GEM0_TXCLK0]  	;# TXCLK0
-
-## RX
-set_property PACKAGE_PIN U14 [get_ports GEM0_RXCLK0]		;# RXCLK0
-set_property PACKAGE_PIN W16 [get_ports GEM0_RXDV0]		;# RXDV0
-set_property PACKAGE_PIN Y16 [get_ports GEM0_RXD0[0]]	;# RXD0[0]
-set_property PACKAGE_PIN V16 [get_ports GEM0_RXD0[1]]   	;# RXD0[1]
-set_property PACKAGE_PIN V17 [get_ports GEM0_RXD0[2]]   	;# RXD0[2]
-set_property PACKAGE_PIN Y17 [get_ports GEM0_RXD0[3]]   	;# RXD0[3]
-
-## MDIO/MDC
-set_property PACKAGE_PIN W15 [get_ports GEM0_MDC0]    ;# MDC0
-set_property PACKAGE_PIN Y14 [get_ports GEM0_MDIO0]   ;# MDIO0
-
-## IOSTANDARD
-set_property IOSTANDARD LVCMOS33 [get_ports { \
-    GEM0_TXEN0 GEM0_TXD0[0] GEM0_TXD0[1] GEM0_TXD0[2] GEM0_TXD0[3] GEM0_TXCLK0 \
-    GEM0_RXCLK0 GEM0_RXDV0 GEM0_RXD0[0] GEM0_RXD0[1] GEM0_RXD0[2] GEM0_RXD0[3] \
-    GEM0_MDC0 GEM0_MDIO0 \
-}]
+## EBAZ4205: GEM0 MII pins live on PS MIO 16..27 (data/control)
+## and MIO 52..53 (MDIO) — they are PS-internal, NOT PL pins.
+## PS7 routes them via FIXED_IO; no XDC entries are required here.
 
 ## EBAZ4205: User LEDs (PL)
 

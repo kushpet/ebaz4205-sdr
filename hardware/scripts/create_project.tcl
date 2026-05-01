@@ -20,6 +20,5 @@ if {[file exists $xdc_file]} {
 
 set_property top sdr_top [current_fileset]
 update_compile_order -fileset sources_1
-save_project
 close_project
 exit
