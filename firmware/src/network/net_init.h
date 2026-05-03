@@ -26,6 +26,12 @@
 // Must be called from main() after platform_init().
 int net_init(void);
 
+// Block the calling task until the netif is administratively up (i.e.
+// xemac_add + netif_set_up have run inside main_thread). Returns 0 on
+// up, -1 on timeout. Use this instead of a fixed sleep before spawning
+// workers that send UDP — premature sends return ERR_RTE (-4).
+int net_wait_up(uint32_t timeout_ms);
+
 // Accessors used by other modules so they don't have to know about
 // the global lwIP / Xilinx structures.
 struct netif *net_get_netif(void);

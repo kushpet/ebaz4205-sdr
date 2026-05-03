@@ -30,9 +30,13 @@ static void boot_task(void *arg)
     (void)arg;
 
     // Networking first (creates the GIC + lwIP and runs GEM0 init in
-    // its own helper task — wait briefly for the netif to come up).
+    // its own helper task). Block until the netif is administratively up
+    // so the workers spawned below don't send UDP before there's a route
+    // — that produced an [udp_tx] send err=-4 (ERR_RTE) storm during the
+    // ~5 s xemac_add auto-neg window.
     net_init();
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    if (net_wait_up(8000) != 0)
+        xil_printf("[boot] netif still down after 8 s — continuing\r\n");
 
     // DMA needs the GIC, which net_init set up.
     if (ebaz_dma_init(&g_rx_chan, &g_tx_chan) != 0) {

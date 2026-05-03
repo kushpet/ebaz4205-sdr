@@ -102,6 +102,16 @@ static void main_thread(void *arg)
     vTaskDelete(NULL);
 }
 
+int net_wait_up(uint32_t timeout_ms)
+{
+    const uint32_t step = 50;
+    for (uint32_t elapsed = 0; elapsed < timeout_ms; elapsed += step) {
+        if (netif_is_up(&s_netif)) return 0;
+        vTaskDelay(pdMS_TO_TICKS(step));
+    }
+    return -1;
+}
+
 int net_init(void)
 {
     // Two Xilinx-lwip-port quirks we work around here:

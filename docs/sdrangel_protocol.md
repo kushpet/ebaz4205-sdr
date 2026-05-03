@@ -49,7 +49,7 @@ Followed by **N parity blocks** (block_index 128..127+N) where N =
 
 | Off | Width | Field                    |
 |-----|-------|--------------------------|
-| 0   | u64   | center_frequency_hz      |
+| 0   | u64   | center_frequency_hz (see note) |
 | 8   | u32   | sample_rate (Hz)         |
 | 12  | u8    | sample_bytes             |
 | 13  | u8    | sample_bits              |
@@ -63,6 +63,12 @@ Followed by **N parity blocks** (block_index 128..127+N) where N =
 
 CRC: standard reflected CRC-32 (poly `0xEDB88320`, init `0xFFFFFFFF`,
 xorout `0xFFFFFFFF`) — same as zlib / boost.
+
+Center-frequency unit note: upstream `RemoteMetaDataFEC` declares the
+field as `m_centerFrequency` with a `//!< kHz` comment, but every code
+site (`remotesinksink.cpp`, `remoteinputudphandler.cpp`, the DSP feed)
+treats it as **Hz**. We emit Hz — matches the upstream code, ignores
+the stale comment.
 
 ## IQ payload
 
