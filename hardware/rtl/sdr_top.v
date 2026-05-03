@@ -1,14 +1,17 @@
 // hardware/rtl/sdr_top.v
 // Toplevel: forwards physical pins to/from the BD's system_wrapper.
-// All real integration (PS7, MMCM via clk_wiz, AXI DMA, DDC/DUC,
-// AXI Interconnect) lives inside the BD — see hardware/scripts/create_bd.tcl.
+//
+// All real integration (PS7, MMCM via clk_wiz, AXI DMA, DDC/DUC, AXI
+// Interconnect) lives inside the BD — see hardware/scripts/create_bd.tcl.
 //
 // This file:
 //   - passes the PS7 DDR / FIXED_IO inout buses through unchanged;
 //   - drives the AD9226 sample clock (CLK_ADC pin M19) from the BD's
 //     60 MHz output via an ODDR for matched edge alignment;
 //   - exposes the BD's 25 MHz output as PHY_REFCLK_25MHZ (pin U18);
-//   - exposes a heartbeat on LED_GREEN/LED_RED.
+//   - exposes a heartbeat on LED_GREEN/LED_RED;
+//   - routes the GEM0 EMIO MII pins to the IP101G PHY on bank 34
+//     (the lower nibble of the GMII bundle is what MII actually uses).
 
 `timescale 1ns/1ps
 
@@ -29,6 +32,16 @@ module sdr_top (
     // User LEDs
     output wire        LED_GREEN,
     output wire        LED_RED,
+
+    // GEM0 EMIO MII -> IP101G (bank 34)
+    output wire [3:0]  GMII_TXD,
+    output wire        GMII_TX_EN,
+    input  wire        GMII_TX_CLK,             // PHY drives MII TX_CLK
+    input  wire        GMII_RX_CLK,             // PHY drives MII RX_CLK
+    input  wire [3:0]  GMII_RXD,
+    input  wire        GMII_RX_DV,
+    output wire        MDIO_MDC,
+    inout  wire        MDIO_MDIO,
 
     // PS7 DDR pins (passed straight through to package)
     inout  wire [14:0] DDR_addr,
@@ -66,6 +79,7 @@ wire fclk_resetn;
 
 // ============================================================
 // BD wrapper instance — port names follow create_bd.tcl
+// (interface ports use the _0 suffix added by make_bd_intf_pins_external)
 // ============================================================
 system_wrapper u_system (
     // ADC / DAC
@@ -80,6 +94,25 @@ system_wrapper u_system (
     .clk_25mhz_0      (clk_25mhz),
     .mmcm_locked_0    (mmcm_locked),
     .fclk_resetn_0    (fclk_resetn),
+
+    // GEM0 EMIO MII <-> IP101G. PS exposes GMII (8b); only lower nibble
+    // is wired in MII mode. TX_ER, COL, CRS aren't on the IP101G — tie
+    // off as MII allows.
+    .GMII_ETHERNET_0_0_txd     ({4'b0, GMII_TXD}),
+    .GMII_ETHERNET_0_0_tx_en   (GMII_TX_EN),
+    .GMII_ETHERNET_0_0_tx_er   (),                 // unused output
+    .GMII_ETHERNET_0_0_tx_clk  (GMII_TX_CLK),
+    .GMII_ETHERNET_0_0_rx_clk  (GMII_RX_CLK),
+    .GMII_ETHERNET_0_0_rxd     ({4'b0, GMII_RXD}),
+    .GMII_ETHERNET_0_0_rx_dv   (GMII_RX_DV),
+    .GMII_ETHERNET_0_0_rx_er   (1'b0),
+    .GMII_ETHERNET_0_0_col     (1'b0),
+    .GMII_ETHERNET_0_0_crs     (1'b0),
+
+    // MDIO — Vivado already inserts the IOBUF inside the BD, so the
+    // wrapper exposes a single bidirectional pin.
+    .MDIO_ETHERNET_0_0_mdc     (MDIO_MDC),
+    .MDIO_ETHERNET_0_0_mdio_io (MDIO_MDIO),
 
     // PS DDR
     .DDR_addr         (DDR_addr),
@@ -129,7 +162,8 @@ ODDR #(
 );
 
 // ============================================================
-// LED status: GREEN ~1 Hz blink while locked, RED solid on fault
+// LED status: GREEN ~1 Hz blink while locked, RED solid on fault.
+// EBAZ4205 LEDs are active-LOW (output 0 lights LED) — invert.
 // ============================================================
 reg [25:0] led_div;
 always @(posedge clk_60mhz or negedge fclk_resetn) begin
@@ -137,7 +171,7 @@ always @(posedge clk_60mhz or negedge fclk_resetn) begin
     else              led_div <= led_div + 26'd1;
 end
 
-assign LED_GREEN = mmcm_locked  ? led_div[25] : 1'b0;
-assign LED_RED   = ~mmcm_locked;
+assign LED_GREEN = ~(mmcm_locked  ? led_div[25] : 1'b0);
+assign LED_RED   = ~(~mmcm_locked);
 
 endmodule

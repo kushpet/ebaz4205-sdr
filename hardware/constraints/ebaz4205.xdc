@@ -45,9 +45,37 @@ set_property IOSTANDARD LVCMOS33 [get_ports { \
     OTR CLK_ADC \
 }]
 
-## EBAZ4205: GEM0 MII pins live on PS MIO 16..27 (data/control)
-## and MIO 52..53 (MDIO) — they are PS-internal, NOT PL pins.
-## PS7 routes them via FIXED_IO; no XDC entries are required here.
+## EBAZ4205: GEM0 MII routed via EMIO (PL pins, bank 34) to IP101G PHY.
+## sdr_top.v exposes its own short port names; use those.
+
+## TX
+set_property PACKAGE_PIN W19 [get_ports GMII_TX_EN]
+set_property PACKAGE_PIN W18 [get_ports {GMII_TXD[0]}]
+set_property PACKAGE_PIN Y18 [get_ports {GMII_TXD[1]}]
+set_property PACKAGE_PIN V18 [get_ports {GMII_TXD[2]}]
+set_property PACKAGE_PIN Y19 [get_ports {GMII_TXD[3]}]
+set_property PACKAGE_PIN U15 [get_ports GMII_TX_CLK]
+
+## RX
+set_property PACKAGE_PIN U14 [get_ports GMII_RX_CLK]
+set_property PACKAGE_PIN W16 [get_ports GMII_RX_DV]
+set_property PACKAGE_PIN Y16 [get_ports {GMII_RXD[0]}]
+set_property PACKAGE_PIN V16 [get_ports {GMII_RXD[1]}]
+set_property PACKAGE_PIN V17 [get_ports {GMII_RXD[2]}]
+set_property PACKAGE_PIN Y17 [get_ports {GMII_RXD[3]}]
+
+## MDIO
+set_property PACKAGE_PIN W15 [get_ports MDIO_MDC]
+set_property PACKAGE_PIN Y14 [get_ports MDIO_MDIO]
+
+## IOSTANDARD for GEM0 EMIO
+set_property IOSTANDARD LVCMOS33 [get_ports { \
+    GMII_TX_EN GMII_TX_CLK \
+    GMII_TXD[0] GMII_TXD[1] GMII_TXD[2] GMII_TXD[3] \
+    GMII_RX_CLK GMII_RX_DV \
+    GMII_RXD[0] GMII_RXD[1] GMII_RXD[2] GMII_RXD[3] \
+    MDIO_MDC MDIO_MDIO \
+}]
 
 ## EBAZ4205: User LEDs (PL)
 

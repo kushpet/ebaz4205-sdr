@@ -21,10 +21,22 @@ create_bd_design $bd_name
 # 1. PS7
 ################################################################
 set ps7 [create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 ps7]
-# Use the board-agnostic preset, then override what we care about.
-# GEM0 sits on MIO 16..27 (MII to IP101G) — that pin set is the MII mode.
-# UART0 on MIO 14..15. FCLK0 = 100 MHz (default of the IP), FCLK3 unused
-# in BD (the wrapper drives the 25 MHz refclk through the MMCM instead).
+# Settings taken from hardware/Board files/ebaz4205/1.0/preset.xml — this is
+# the actual EBAZ4205 board configuration that PetaLinux/U-Boot use.
+#
+# Key facts that bit us before:
+#   - DDR3 chip is MT41K128M16 JT-125 (16-bit bus). The default Zynq-7010
+#     DDR settings produce a controller that "comes up" but slverr's every
+#     access. We MUST set PCW_UIPARAM_DDR_PARTNO correctly.
+#   - Console is UART1 on MIO 24..25, NOT UART0. xil_printf goes to UART0
+#     by default unless the BSP is told otherwise — that's why our firmware
+#     was silent.
+#   - GEM0 is routed via EMIO (MII signals exposed on PL pins, NOT MIO).
+#     PHY is IP101G. MDIO is also EMIO.
+# DDR3 — actual chip on EBAZ4205, MT41K128M16 JT-125 (16-bit bus).
+# UART1 = console (MIO 24/25).
+# GEM0 routed via EMIO (PL pins, MII to IP101G); MDIO via EMIO too.
+# SD0 on MIO 40..45; NAND on MIO 0,2..14 with EBAZ-specific timings.
 set_property -dict [list \
     CONFIG.PCW_USE_S_AXI_HP0               {1} \
     CONFIG.PCW_USE_S_AXI_HP2               {1} \
@@ -33,13 +45,32 @@ set_property -dict [list \
     CONFIG.PCW_USE_FABRIC_INTERRUPT        {1} \
     CONFIG.PCW_IRQ_F2P_INTR                {1} \
     CONFIG.PCW_EN_CLK0_PORT                {1} \
-    CONFIG.PCW_ENET0_PERIPHERAL_ENABLE   {1} \
-    CONFIG.PCW_ENET0_ENET0_IO            {MIO 16 .. 27} \
-    CONFIG.PCW_ENET0_GRP_MDIO_ENABLE     {1} \
-    CONFIG.PCW_ENET0_GRP_MDIO_IO         {MIO 52 .. 53} \
-    CONFIG.PCW_UART0_PERIPHERAL_ENABLE   {1} \
-    CONFIG.PCW_UART0_UART0_IO            {MIO 14 .. 15} \
-    CONFIG.PCW_DDR_RAM_HIGHADDR          {0x1FFFFFFF} \
+    CONFIG.PCW_DDR_RAM_HIGHADDR            {0x1FFFFFFF} \
+    CONFIG.PCW_UIPARAM_DDR_BUS_WIDTH       {16 Bit} \
+    CONFIG.PCW_UIPARAM_DDR_PARTNO          {MT41K128M16 JT-125} \
+    CONFIG.PCW_UART1_PERIPHERAL_ENABLE     {1} \
+    CONFIG.PCW_UART1_UART1_IO              {MIO 24 .. 25} \
+    CONFIG.PCW_ENET0_PERIPHERAL_ENABLE     {1} \
+    CONFIG.PCW_ENET0_ENET0_IO              {EMIO} \
+    CONFIG.PCW_ENET0_GRP_MDIO_ENABLE       {1} \
+    CONFIG.PCW_ENET0_PERIPHERAL_FREQMHZ    {100 Mbps} \
+    CONFIG.PCW_SD0_PERIPHERAL_ENABLE       {1} \
+    CONFIG.PCW_SD0_SD0_IO                  {MIO 40 .. 45} \
+    CONFIG.PCW_NAND_PERIPHERAL_ENABLE      {1} \
+    CONFIG.PCW_NAND_GRP_D8_ENABLE          {0} \
+    CONFIG.PCW_NAND_NAND_IO                {MIO 0 2.. 14} \
+    CONFIG.PCW_NAND_CYCLES_T_AR            {15} \
+    CONFIG.PCW_NAND_CYCLES_T_CLR           {15} \
+    CONFIG.PCW_NAND_CYCLES_T_RC            {30} \
+    CONFIG.PCW_NAND_CYCLES_T_REA           {5} \
+    CONFIG.PCW_NAND_CYCLES_T_RR            {25} \
+    CONFIG.PCW_NAND_CYCLES_T_WC            {30} \
+    CONFIG.PCW_NAND_CYCLES_T_WP            {15} \
+    CONFIG.PCW_GPIO_MIO_GPIO_ENABLE        {1} \
+    CONFIG.PCW_GPIO_MIO_GPIO_IO            {MIO} \
+    CONFIG.PCW_ENET_RESET_ENABLE           {0} \
+    CONFIG.PCW_USB_RESET_ENABLE            {0} \
+    CONFIG.PCW_I2C_RESET_ENABLE            {0} \
 ] $ps7
 
 apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 \
@@ -246,6 +277,12 @@ make_bd_pins_external [get_bd_pins ddc/OTR]
 make_bd_pins_external [get_bd_pins duc/DAC]
 make_bd_pins_external [get_bd_pins duc/CLK_DAC]
 make_bd_pins_external [get_bd_pins duc/PD]
+
+# GEM0 EMIO routes the MII signals out through PL pins so PS-side TCP/IP
+# stack can reach IP101G via bank 34. Make_bd_intf_pins_external exposes
+# the whole GMII bundle plus the MDIO bundle in one shot.
+make_bd_intf_pins_external [get_bd_intf_pins ps7/GMII_ETHERNET_0]
+make_bd_intf_pins_external [get_bd_intf_pins ps7/MDIO_ETHERNET_0]
 
 # Internal-driver pins (clk60/clk25/locked/fclk_resetn) need explicit BD
 # ports — make_bd_pins_external silently skips pins that are already
