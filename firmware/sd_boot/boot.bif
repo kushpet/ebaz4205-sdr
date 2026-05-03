@@ -1,0 +1,6 @@
+the_ROM_image:
+{
+    [bootloader] /home/user/GitHub/kushpet/ebaz4205-sdr/firmware/vitis_ws/sdr_fsbl/Release/sdr_fsbl.elf
+    /home/user/GitHub/kushpet/ebaz4205-sdr/hardware/ebaz4205_sdr_vivado/ebaz4205_sdr.runs/impl_1/sdr_top.bit
+    /home/user/GitHub/kushpet/ebaz4205-sdr/firmware/vitis_ws/sdr_app/Release/sdr_app.elf
+}
