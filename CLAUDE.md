@@ -138,6 +138,12 @@ xsct firmware/build.tcl                        # if/when added
   yields a frequency-mirrored baseband; SDRAngel can flip via "swap I/Q".
   Acceptable for v1; revisit if real RF testing requires correct sense.
 - `cm256` on Cortex-A9: leave SIMD off for v1, re-enable NEON later.
+- AXI DMA `c_sg_length_width` defaults to **14** (max transfer 16 KiB-1).
+  Our DMA buffers are 64 KiB, so the BD sets it to **23** (8 MiB max). If
+  you forget, `XAxiDma_SimpleTransfer` returns `XST_INVALID_PARAM` and
+  silently does nothing — DA/LEN read as 0 and `[rx_task] DMA timeout`
+  fires every poll cycle. After bumping it, regenerate the Vitis platform
+  so `XPAR_DMA0_SG_LENGTH_WIDTH` in `xparameters.h` is refreshed.
 
 ## EBAZ4205-specific bring-up notes (do NOT lose)
 

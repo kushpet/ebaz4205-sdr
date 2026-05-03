@@ -47,7 +47,7 @@ Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
 | 3.5 | Firmware build (Vitis) | ✅ | sdr_app.elf + sdr_fsbl.elf; lwIP socket API on FreeRTOS; heap=1 MB |
 | 3.6 | SD-card BOOT.bin    | ✅ | `firmware/sd_boot/BOOT.bin` (FSBL + bitstream + sdr_app) |
 | 3.7 | First boot on hardware | ✅ | UART1 banner, lwIP up, PHY autoneg complete, all tasks scheduled |
-| 3.8 | DMA RX path working | ✅ | `ddc_top.v` now asserts `m_axis_tlast` every `samples_per_packet` beats (reg 0x0C); firmware sets it to `EBAZ_DMA_BUF_BYTES/4` |
+| 3.8 | DMA RX path working | ✅ | `ddc_top.v` asserts `m_axis_tlast` every `samples_per_packet` beats (reg 0x0C); BD sets DMA `c_sg_length_width=23` so 64 KiB transfers fit; firmware sets `samples_per_packet = EBAZ_DMA_BUF_BYTES/4` |
 | 3.9 | End-to-end SDRAngel | ⬜ | Wire format never validated against real SDRAngel; only loopback Python tools |
 
 ## Open caveats

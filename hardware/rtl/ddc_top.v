@@ -234,22 +234,28 @@ hb_fir_decimator u_hb_Q (
 );
 
 // ============================================================
-// Status register: overflow (OTR sticky), lock (hb_I_valid)
+// Status register: bit0 overflow (sticky OTR), bit1 lock (sticky — set
+// once first hb_I sample appears so a polled read doesn't miss it).
 // ============================================================
 reg overflow_sticky;
+reg lock_sticky;
 always @(posedge clk) begin
-    if (!resetn)
+    if (!resetn) begin
         overflow_sticky <= 1'b0;
-    else if (adc_totr & adc_tvalid)
-        overflow_sticky <= 1'b1;
+        lock_sticky     <= 1'b0;
+    end else begin
+        if (adc_totr & adc_tvalid)
+            overflow_sticky <= 1'b1;
+        if (hb_I_valid & hb_Q_valid)
+            lock_sticky     <= 1'b1;
+    end
 end
 
 always @(posedge clk) begin
     if (!resetn)
         reg_status <= 32'd0;
     else
-        reg_status <= {30'd0, hb_I_valid, overflow_sticky};
-    // bit[0] = overflow (sticky OTR), bit[1] = lock (data flowing)
+        reg_status <= {30'd0, lock_sticky, overflow_sticky};
 end
 
 // ============================================================

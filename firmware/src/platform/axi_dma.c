@@ -102,10 +102,15 @@ int ebaz_dma_start(ebaz_dma_chan_t *ch)
 {
     XAxiDma *drv = (ch->direction == 0) ? &s_dma_rx : &s_dma_tx;
     int dir      = (ch->direction == 0) ? XAXIDMA_DEVICE_TO_DMA : XAXIDMA_DMA_TO_DEVICE;
-    return (XAxiDma_SimpleTransfer(drv,
-                                   (UINTPTR)ch->buf[ch->cur],
-                                   ch->buf_len,
-                                   dir) == XST_SUCCESS) ? 0 : -1;
+    int rc = XAxiDma_SimpleTransfer(drv,
+                                    (UINTPTR)ch->buf[ch->cur],
+                                    ch->buf_len, dir);
+    if (rc != XST_SUCCESS) {
+        xil_printf("[dma] SimpleTransfer dir=%d buf=%p len=%u failed: %d\r\n",
+                   dir, ch->buf[ch->cur], (unsigned)ch->buf_len, rc);
+        return -1;
+    }
+    return 0;
 }
 
 int ebaz_dma_wait(ebaz_dma_chan_t *ch, uint32_t timeout_ms)
