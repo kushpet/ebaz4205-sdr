@@ -7,8 +7,23 @@
 #include "lwip/init.h"
 #include "lwip/dhcp.h"
 #include "lwip/ip4_addr.h"
+#include "lwip/mem.h"
+#include "lwip/memp.h"
+#include "lwip/pbuf.h"
+#include "lwip/netif.h"
+#include "lwip/ip4.h"
+#include "lwip/etharp.h"
+#include "lwip/udp.h"
+#include "lwip/tcp.h"
+#include "lwip/igmp.h"
+#include "lwip/dns.h"
+#include "lwip/timeouts.h"
 #include "lwip/tcpip.h"
 #include "netif/xadapter.h"
+
+extern void lwip_sock_init(void);
+extern void sys_init(void);
+extern void tcp_init(void);
 
 #include "xparameters.h"
 #include "xil_printf.h"
@@ -63,16 +78,40 @@ static void main_thread(void *arg)
     dhcp_start(&s_netif);
 #endif
 
-    xil_printf("[net] up: %s/%s gw=%s\r\n",
-               ip4addr_ntoa(&ip), ip4addr_ntoa(&mask), ip4addr_ntoa(&gw));
+    // ip4addr_ntoa returns a static buffer — print one at a time so the
+    // three substitutions don't all share the same scratch.
+    xil_printf("[net] up: ip=%s",  ip4addr_ntoa(&ip));
+    xil_printf(" mask=%s",         ip4addr_ntoa(&mask));
+    xil_printf(" gw=%s\r\n",       ip4addr_ntoa(&gw));
 
     vTaskDelete(NULL);
 }
 
 int net_init(void)
 {
-    // Initialise lwIP and start the tcpip_thread
+    // Two Xilinx-lwip-port quirks we work around here:
+    //   (1) tcpip_init() is patched to skip lwip_init() unless LWIP_XINIT
+    //       is set — and it isn't. So we must run the initialisers
+    //       ourselves before tcpip_init, otherwise mem_mutex is uninited
+    //       and the first mem_malloc traps in queue.c:1507.
+    //   (2) The Xilinx-added lwip_sock_init() calls tcpip_init() and
+    //       then busy-waits for the tcpip_thread to set a flag. That
+    //       deadlocks here because boot_task runs at priority 4 while
+    //       TCPIP_THREAD_PRIO is 3 — the spin never yields, so the
+    //       lower-priority tcpip_thread never runs. Calling tcpip_init
+    //       directly (no spin) lets us yield via vTaskDelay below.
+    sys_init();
+    mem_init();
+    memp_init();
+    pbuf_init();
+    netif_init();
+    etharp_init();
+    udp_init();
+    tcp_init();
+    sys_timeouts_init();
+
     tcpip_init(NULL, NULL);
+    xil_printf("[net] tcpip_init returned\r\n");
 
     // Spawn a one-shot task to add the netif (needs to run after the
     // scheduler is ticking because xemacif_input_thread calls FreeRTOS
@@ -80,5 +119,6 @@ int net_init(void)
     if (xTaskCreate(main_thread, "net_init", 1024, NULL,
                     tskIDLE_PRIORITY + 1, NULL) != pdPASS)
         return -1;
+    xil_printf("[net] main_thread spawned\r\n");
     return 0;
 }

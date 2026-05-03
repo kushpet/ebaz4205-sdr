@@ -60,6 +60,32 @@ static void boot_task(void *arg)
     vTaskDelete(NULL);
 }
 
+// Override the BSP's weak vApplicationAssert: scan the stack for code
+// pointers so the call chain to a failed configASSERT is recoverable
+// without a debugger. (Keep it — used to find the lwip_init / mem_mutex
+// initialisation bug; useful next time something else asserts.)
+__attribute__((noinline))
+void vApplicationAssert(const char *file, uint32_t line)
+{
+    register uintptr_t sp_now asm ("sp");
+    const uintptr_t text_lo = 0x00100000;     // our DDR text base
+    const uintptr_t text_hi = 0x00400000;
+
+    xil_printf("Assert failed in file %s, line %lu  sp=0x%08x\r\n",
+               file, (unsigned long)line, (unsigned)sp_now);
+
+    uint32_t *p = (uint32_t *)sp_now;
+    int found = 0;
+    for (int i = 0; i < 64 && found < 8; i++) {
+        uint32_t v = p[i];
+        if (v >= text_lo && v < text_hi && (v & 1) == 0) {
+            xil_printf("  stack[%2d] = 0x%08x  (code ptr)\r\n", i, v);
+            found++;
+        }
+    }
+    for (;;) { __asm volatile("nop"); }
+}
+
 int main(void)
 {
     platform_init();

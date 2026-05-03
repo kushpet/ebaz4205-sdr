@@ -25,7 +25,7 @@
 #define IP101G_BMSR_AN_DONE  0x0020
 
 // Default MDIO PHY address on EBAZ4205 (board-strapping resistors).
-#define IP101G_PHY_ADDR_DEFAULT 0x01
+#define IP101G_PHY_ADDR_DEFAULT 0x00     // EBAZ4205 straps IP101G to addr 0
 
 int  ip101g_init(uint8_t phy_addr);
 int  ip101g_link_up(uint8_t phy_addr);
