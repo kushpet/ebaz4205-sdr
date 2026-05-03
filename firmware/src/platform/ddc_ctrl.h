@@ -4,9 +4,10 @@
 #include <stdint.h>
 
 // AXI-Lite register offsets — match ddc_top.v / duc_top.v.
-#define DDC_REG_NCO_FREQ   0x00
-#define DDC_REG_DEC_RATE   0x04
-#define DDC_REG_STATUS     0x08
+#define DDC_REG_NCO_FREQ           0x00
+#define DDC_REG_DEC_RATE           0x04
+#define DDC_REG_STATUS             0x08
+#define DDC_REG_SAMPLES_PER_PACKET 0x0C
 
 #define DUC_REG_NCO_FREQ   0x00
 #define DUC_REG_INT_RATE   0x04
@@ -28,6 +29,10 @@ static inline uint32_t ebaz_freq_to_word(int32_t fc_hz)
 void     ddc_set_frequency(int32_t fc_hz);
 void     ddc_set_decimation(uint8_t r);    // 15, 30, 60, 120
 uint32_t ddc_get_status(void);              // bit0 overflow, bit1 lock
+// Number of 32-bit AXI-Stream beats between TLAST pulses; must equal the
+// AXI DMA buffer length (in samples) — direct-register mode needs TLAST
+// on the last beat to signal completion.
+void     ddc_set_samples_per_packet(uint32_t n);
 
 // DUC (TX) controls
 void duc_set_frequency(int32_t fc_hz);

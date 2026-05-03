@@ -18,6 +18,11 @@ uint32_t ddc_get_status(void)
     return Xil_In32(EBAZ_DDC_BASE + DDC_REG_STATUS);
 }
 
+void ddc_set_samples_per_packet(uint32_t n)
+{
+    Xil_Out32(EBAZ_DDC_BASE + DDC_REG_SAMPLES_PER_PACKET, n);
+}
+
 void duc_set_frequency(int32_t fc_hz)
 {
     Xil_Out32(EBAZ_DUC_BASE + DUC_REG_NCO_FREQ, ebaz_freq_to_word(fc_hz));

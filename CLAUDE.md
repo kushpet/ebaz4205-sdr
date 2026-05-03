@@ -74,6 +74,9 @@ DDC/DUC register offsets:
 - `0x00` `nco_freq_word[31:0]` (Δφ, units of 2³² / 60 MHz ≈ 0.0140 Hz/LSB)
 - `0x04` `decimation_rate[6:0]` (15 / 30 / 60 / 120)
 - `0x08` DDC: status (RO, bit0=overflow sticky, bit1=lock); DUC: PD (bit0)
+- `0x0C` DDC only: `samples_per_packet[31:0]` — output beats between
+  `m_axis_tlast` pulses; must equal the AXI DMA buffer length (in 32-bit
+  samples). Default `4096`; firmware overrides with `EBAZ_DMA_BUF_BYTES/4`.
 
 ## Software stack (planned)
 
@@ -135,10 +138,6 @@ xsct firmware/build.tcl                        # if/when added
   yields a frequency-mirrored baseband; SDRAngel can flip via "swap I/Q".
   Acceptable for v1; revisit if real RF testing requires correct sense.
 - `cm256` on Cortex-A9: leave SIMD off for v1, re-enable NEON later.
-- DDC `m_axis_tlast` is **not** driven. AXI DMA in direct-register mode
-  hangs (`[rx_task] DMA timeout`). Need to add a sample-counter in
-  [`ddc_top.v`](hardware/rtl/ddc_top.v) that asserts TLAST every N
-  samples (N from a new AXI-Lite register).
 
 ## EBAZ4205-specific bring-up notes (do NOT lose)
 

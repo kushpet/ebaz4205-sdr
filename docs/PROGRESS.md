@@ -47,7 +47,7 @@ Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
 | 3.5 | Firmware build (Vitis) | ✅ | sdr_app.elf + sdr_fsbl.elf; lwIP socket API on FreeRTOS; heap=1 MB |
 | 3.6 | SD-card BOOT.bin    | ✅ | `firmware/sd_boot/BOOT.bin` (FSBL + bitstream + sdr_app) |
 | 3.7 | First boot on hardware | ✅ | UART1 banner, lwIP up, PHY autoneg complete, all tasks scheduled |
-| 3.8 | DMA RX path working | ⬜ | Currently `[rx_task] DMA timeout` — DDC needs to assert `m_axis_tlast` |
+| 3.8 | DMA RX path working | ✅ | `ddc_top.v` now asserts `m_axis_tlast` every `samples_per_packet` beats (reg 0x0C); firmware sets it to `EBAZ_DMA_BUF_BYTES/4` |
 | 3.9 | End-to-end SDRAngel | ⬜ | Wire format never validated against real SDRAngel; only loopback Python tools |
 
 ## Open caveats
@@ -64,10 +64,9 @@ Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
    FreeRTOS-on-bare-metal build. Revisit if jitter is unacceptable.
 5. **PHY refclk pin.** XDC routes `PHY_REFCLK_25MHZ` → U18. Verify on
    the schematic that U18 is wired to IP101G `XI` and not to a strap.
-6. **DDC `m_axis_tlast` is not driven.** AXI DMA in direct-register mode
-   never sees end-of-packet → `[rx_task] DMA timeout` on every poll. RTL
-   fix: add a sample counter to `ddc_top.v` that asserts TLAST every N
-   samples (N from a new AXI-Lite register).
+6. ~~**DDC `m_axis_tlast` is not driven.**~~ Resolved: `ddc_top.v` asserts
+   TLAST every `reg_samples_per_packet` beats (AXI-Lite reg 0x0C, default
+   4096); firmware writes `EBAZ_DMA_BUF_BYTES/4` at boot.
 7. **EBAZ4205 board peculiarities** (worth their own Tcl):
    - DDR3 chip is `MT41K128M16 JT-125` (16-bit). Default Zynq-7010 PCW
      does NOT match — silently brings up a controller that slverr's on

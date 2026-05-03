@@ -4,6 +4,7 @@
 //   0x00: nco_freq_word[31:0]
 //   0x04: decimation_rate[7:0]  (15/30/60/120)
 //   0x08: status[31:0]          {30'b0, lock, overflow}
+//   0x0C: samples_per_packet[31:0] — count of output beats per TLAST burst
 
 `timescale 1ns/1ps
 
@@ -38,15 +39,17 @@ module ddc_top #(
     // AXI-Stream I/Q output
     output wire [31:0] m_axis_tdata,  // [31:16]=Q, [15:0]=I (16-bit signed)
     output wire        m_axis_tvalid,
+    output wire        m_axis_tlast,
     input  wire        m_axis_tready
 );
 
 // ============================================================
 // AXI-Lite: single register bank
 // ============================================================
-reg [31:0] reg_nco_freq;     // 0x00
-reg [6:0]  reg_dec_rate;     // 0x04 [6:0]
-reg [31:0] reg_status;       // 0x08, RO
+reg [31:0] reg_nco_freq;          // 0x00
+reg [6:0]  reg_dec_rate;          // 0x04 [6:0]
+reg [31:0] reg_status;            // 0x08, RO
+reg [31:0] reg_samples_per_packet; // 0x0C, default 4096
 
 reg        axil_awready_r, axil_wready_r, axil_bvalid_r;
 reg [1:0]  axil_bresp_r;
@@ -65,8 +68,9 @@ assign s_axil_rvalid  = axil_rvalid_r;
 
 always @(posedge clk) begin
     if (!resetn) begin
-        reg_nco_freq   <= 32'd0;
-        reg_dec_rate   <= 7'd30;
+        reg_nco_freq           <= 32'd0;
+        reg_dec_rate           <= 7'd30;
+        reg_samples_per_packet <= 32'd4096;
         axil_awready_r <= 1'b0;
         axil_wready_r  <= 1'b0;
         axil_bvalid_r  <= 1'b0;
@@ -76,8 +80,9 @@ always @(posedge clk) begin
         axil_wready_r  <= s_axil_awvalid & s_axil_wvalid & ~axil_wready_r;
         if (s_axil_awvalid && s_axil_wvalid && axil_awready_r && axil_wready_r) begin
             case (s_axil_awaddr[3:2])
-                2'b00: reg_nco_freq <= s_axil_wdata;
-                2'b01: reg_dec_rate <= s_axil_wdata[6:0];
+                2'b00: reg_nco_freq           <= s_axil_wdata;
+                2'b01: reg_dec_rate           <= s_axil_wdata[6:0];
+                2'b11: reg_samples_per_packet <= s_axil_wdata;
                 default: ;
             endcase
             axil_bvalid_r <= 1'b1;
@@ -102,6 +107,7 @@ always @(posedge clk) begin
                 2'b00: axil_rdata_r <= reg_nco_freq;
                 2'b01: axil_rdata_r <= {25'd0, reg_dec_rate};
                 2'b10: axil_rdata_r <= reg_status;
+                2'b11: axil_rdata_r <= reg_samples_per_packet;
                 default: axil_rdata_r <= 32'd0;
             endcase
         end else
@@ -248,9 +254,27 @@ end
 
 // ============================================================
 // AXI-Stream I/Q output: pack [31:16]=Q, [15:0]=I
+// TLAST asserted on every (samples_per_packet)-th accepted beat — required
+// by AXI DMA in direct-register (non-SG) mode to signal end-of-buffer.
 // ============================================================
+reg  [31:0] sample_counter;
+wire        axis_handshake = (hb_I_valid & hb_Q_valid) & m_axis_tready;
+
+always @(posedge clk) begin
+    if (!resetn)
+        sample_counter <= 32'd0;
+    else if (axis_handshake) begin
+        if (sample_counter == reg_samples_per_packet - 32'd1)
+            sample_counter <= 32'd0;
+        else
+            sample_counter <= sample_counter + 32'd1;
+    end
+end
+
 assign m_axis_tdata  = {hb_Q_out, hb_I_out};
 assign m_axis_tvalid = hb_I_valid & hb_Q_valid;
+assign m_axis_tlast  = axis_handshake &&
+                       (sample_counter == reg_samples_per_packet - 32'd1);
 
 endmodule
 
