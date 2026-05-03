@@ -184,6 +184,33 @@ are the authoritative source.
   again corrupts the port's vector table and trips queue.c asserts.
 - Default `configTOTAL_HEAP_SIZE = 65536` is too small for FreeRTOS +
   lwIP + four worker tasks; bump to ≥ 1 MB via `bsp config total_heap_size`.
+- The BSP owns the real `XEmacPs` instance — it lives as the first
+  member of `xemacpsif_s` and is reachable via
+  `((struct xemac_s *)netif->state)->state` cast to `XEmacPs *`.
+  A separate `static XEmacPs` is never wired up by `xemac_add`, so any
+  `XEmacPs_PhyRead` against it returns `0x0000`. `net_get_xemacps()`
+  in [`net_init.c`](firmware/src/network/net_init.c) does the cast.
+- BSP's `get_IEEE_phy_speed` (in `xemacpsif_physpeed.c`) dispatches by
+  PHYID: TI / Realtek / "everything else == Marvell". The IP101G
+  (`0x0243:0x0C54`) falls through to the Marvell parser, which reads
+  Marvell's vendor-specific status register (reg 0x11) — on the
+  IP101G that's `PSMR` with totally different bit semantics, so the
+  boot log line `link speed for phy address 0: 10` is **always 10**
+  regardless of the actual negotiated speed. We override the MAC's
+  `NWCFG.SPEED` from `ip101g_init` via `XEmacPs_SetOperatingSpeed`
+  using `ANAR ∩ ANLPAR` (standard 802.3 outcome).
+- `xadapter.c` has a missing `break;` after `case xemac_type_emacps:`
+  in the switch around line 167 — emacps always falls through to the
+  `default:` arm and prints `unable to determine type of EMAC with
+  baseaddress 0x...`. Cosmetic only; the netif was registered fine.
+- `eth_link_detect` only calls `netif_set_link_up()` from the
+  `ETH_LINK_NEGOTIATING` case. On cold boot `eth_link_status` jumps
+  `UNDEFINED → UP` directly (set in `xemacpsif_hw.c:141`), bypassing
+  `NEGOTIATING`, so `netif_is_link_up()` **never asserts on initial
+  bring-up**. Gate workers on `netif_is_up()` (administrative state,
+  set by our `netif_set_up()` in `main_thread`) instead — see
+  `net_wait_up()` in [`net_init.c`](firmware/src/network/net_init.c).
+  Polling `netif_is_link_up` here will spin until cable replug.
 
 ## Build commands
 
