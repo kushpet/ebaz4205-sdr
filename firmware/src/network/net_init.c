@@ -18,25 +18,17 @@
 
 static struct netif s_netif;
 static XEmacPs      s_emac;
-static XScuGic      s_gic;
-static int          s_gic_inited = 0;
+
+// The Xilinx FreeRTOS port (freertos10_xilinx) already initialises one
+// XScuGic instance and registers the IRQ exception vector. Reuse it via
+// the global it exposes — calling XScuGic_CfgInitialize / Xil_Exception*
+// ourselves would corrupt the port's state and trip queue.c assertions
+// the moment any FreeRTOS API tries to block in a critical section.
+extern XScuGic xInterruptController;
 
 struct netif *net_get_netif(void)   { return &s_netif; }
 XEmacPs      *net_get_xemacps(void) { return &s_emac; }
-XScuGic      *net_get_gic(void)     { return s_gic_inited ? &s_gic : NULL; }
-
-static int gic_init(void)
-{
-    XScuGic_Config *cfg = XScuGic_LookupConfig(XPAR_SCUGIC_SINGLE_DEVICE_ID);
-    if (!cfg) return -1;
-    if (XScuGic_CfgInitialize(&s_gic, cfg, cfg->CpuBaseAddress) != XST_SUCCESS)
-        return -1;
-    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
-        (Xil_ExceptionHandler)XScuGic_InterruptHandler, &s_gic);
-    Xil_ExceptionEnable();
-    s_gic_inited = 1;
-    return 0;
-}
+XScuGic      *net_get_gic(void)     { return &xInterruptController; }
 
 static void main_thread(void *arg)
 {
@@ -79,8 +71,6 @@ static void main_thread(void *arg)
 
 int net_init(void)
 {
-    if (!s_gic_inited && gic_init() != 0) return -1;
-
     // Initialise lwIP and start the tcpip_thread
     tcpip_init(NULL, NULL);
 
