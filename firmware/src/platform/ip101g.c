@@ -31,46 +31,42 @@ static int phy_write(uint8_t addr, uint8_t reg, uint16_t val)
 
 int ip101g_init(uint8_t phy_addr)
 {
-    // The Xilinx lwIP port already drove auto-neg inside xemac_add().
-    // Its speed-detect dispatches by PHYID: TI / Realtek / "everything
-    // else == Marvell". The IP101G matches none of those, so the
-    // Marvell parser is fed the wrong vendor-specific status register
-    // and the boot log reports "10 Mbps" regardless of what was
-    // actually negotiated. We re-read the PHY here to get the real
-    // resolved speed/duplex and re-program the MAC accordingly.
+    // BSP's xemac_add() already drove auto-neg to completion (it prints
+    // "autonegotiation complete" in the boot log). It only mis-decodes
+    // the resolved speed: get_IEEE_phy_speed dispatches by PHYID and
+    // the IP101G doesn't match TI/Realtek, so the Marvell parser ends
+    // up reading the wrong vendor-specific status register and reports
+    // "10 Mbps" no matter what. We must NOT restart auto-neg here (that
+    // tore the link down in the previous build); instead, derive the
+    // negotiated speed from the standard 802.3 way — ANAR ∩ ANLPAR —
+    // and re-program the MAC's NWCFG.SPEED bit accordingly.
 
     uint16_t id1 = 0, id2 = 0, bmcr = 0, bmsr = 0;
-
-    // Force 100BASE-TX FD/HD only (skip 10 Mbit) and restart auto-neg
-    // so a stuck-at-10 link partner gets re-negotiated to 100M.
-    phy_write(phy_addr, IP101G_ANAR, (1<<8) | (1<<7) | 0x0001);
-    phy_write(phy_addr, IP101G_BMCR, IP101G_BMCR_AN_EN | IP101G_BMCR_AN_RESTART);
-
-    // Wait for AN_DONE + LINK (best-effort, ~3 s)
-    for (int i = 0; i < 30; ++i) {
-        phy_read(phy_addr, IP101G_BMSR, &bmsr);
-        if ((bmsr & IP101G_BMSR_LINK) && (bmsr & IP101G_BMSR_AN_DONE))
-            break;
-        for (volatile int d = 0; d < 1000000; ++d) ;
-    }
-
+    uint16_t anar = 0, anlpar = 0, psmr = 0;
     phy_read(phy_addr, IP101G_PHYIDR1, &id1);
     phy_read(phy_addr, IP101G_PHYIDR2, &id2);
     phy_read(phy_addr, IP101G_BMCR,    &bmcr);
+    phy_read(phy_addr, IP101G_BMSR,    &bmsr);
+    phy_read(phy_addr, IP101G_ANAR,    &anar);
+    phy_read(phy_addr, IP101G_ANLPAR,  &anlpar);
+    phy_read(phy_addr, IP101G_PSMR,    &psmr);
 
-    // After auto-neg the IP101G reflects the resolved speed/duplex
-    // back into BMCR: bit 13 = 100 Mbps, bit 8 = full duplex.
-    int speed_mbps  = (bmcr & IP101G_BMCR_100M) ? 100 : 10;
-    int full_duplex = (bmcr & IP101G_BMCR_FD)   ? 1   : 0;
+    // ANAR / ANLPAR bit map (IEEE 802.3 clause 28):
+    //   [8]=100FD  [7]=100HD  [6]=10FD  [5]=10HD
+    uint16_t common = anar & anlpar;
+    int speed_mbps, full_duplex;
+    if      (common & (1u << 8)) { speed_mbps = 100; full_duplex = 1; }
+    else if (common & (1u << 7)) { speed_mbps = 100; full_duplex = 0; }
+    else if (common & (1u << 6)) { speed_mbps = 10;  full_duplex = 1; }
+    else                         { speed_mbps = 10;  full_duplex = 0; }
 
-    xil_printf("[ip101g] PHYID=%04x:%04x BMCR=%04x BMSR=%04x -> %d Mbps %s%s\r\n",
-               id1, id2, bmcr, bmsr, speed_mbps,
-               full_duplex ? "FD" : "HD",
-               (bmsr & IP101G_BMSR_LINK) ? "" : " (no link)");
+    xil_printf("[ip101g] PHYID=%04x:%04x BMCR=%04x BMSR=%04x "
+               "ANAR=%04x ANLPAR=%04x PSMR=%04x\r\n",
+               id1, id2, bmcr, bmsr, anar, anlpar, psmr);
+    xil_printf("[ip101g] negotiated %d Mbps %s%s\r\n",
+               speed_mbps, full_duplex ? "FD" : "HD",
+               (bmsr & IP101G_BMSR_LINK) ? " LINK_UP" : " (no link)");
 
-    // Sync the MAC speed bit (NWCFG.SPEED) with what the PHY actually
-    // negotiated — otherwise the BSP's mis-detected value (typically 10)
-    // remains and TX/RX runs at the wrong rate.
     XEmacPs *emac = net_get_xemacps();
     if (emac) XEmacPs_SetOperatingSpeed(emac, (u16)speed_mbps);
 
