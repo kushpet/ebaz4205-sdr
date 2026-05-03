@@ -10,7 +10,7 @@ what's already done.
 | # | Status | Task | Prompt |
 |---|---|---|---|
 | 1 | ✅ | DDC `m_axis_tlast` generator — clears `[rx_task] DMA timeout` | [prompts/01-ddc-tlast.md](prompts/01-ddc-tlast.md) |
-| 2 | ⬜ | MDIO via `XEmacPs_PhyRead` — fix our IP101G read-zero | [prompts/02-mdio-xemacps.md](prompts/02-mdio-xemacps.md) |
+| 2 | ✅ | MDIO via `XEmacPs_PhyRead` — fix our IP101G read-zero | [prompts/02-mdio-xemacps.md](prompts/02-mdio-xemacps.md) |
 | 3 | ⬜ | Real SDRAngel end-to-end test (Remote Output plugin) | [prompts/03-sdrangel-e2e.md](prompts/03-sdrangel-e2e.md) |
 | 4 | ⬜ | Q-sign mirror fix in `complex_mixer.v` | [prompts/04-q-sign-fix.md](prompts/04-q-sign-fix.md) |
 | 5 | ⬜ | cm256 FEC port from `f4exb/cm256cc` | [prompts/05-cm256-fec.md](prompts/05-cm256-fec.md) |
