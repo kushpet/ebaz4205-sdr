@@ -5,6 +5,17 @@ working (step 1 cleared the timeout), MDIO works (step 2). The wire
 format implementation has never been validated against real SDRAngel —
 do that now.
 
+## Known starting state (after step 1 hardware verify, 2026-05-03)
+
+Once the DMA timeout cleared, `rx_task` started looping through buffers
+and `[udp_tx] send err=-4` (lwIP `ERR_RTE`) fires every iteration when
+no host is listening on `192.168.1.10:9090` and/or the netif is still
+coming up. Expected — you'll quiet it by pointing a real host at the
+firmware (via `tools/test_udp_rx.py` or SDRAngel). If the error
+persists *after* a host is listening and `[net] up:` was logged, that's
+a real bug — investigate `udp_tx_open` / `netconn_sendto` in
+`firmware/src/network/udp_tx.c`.
+
 ## Read first
 
 1. `CLAUDE.md`
