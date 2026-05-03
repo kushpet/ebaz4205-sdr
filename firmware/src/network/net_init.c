@@ -20,6 +20,11 @@
 #include "lwip/timeouts.h"
 #include "lwip/tcpip.h"
 #include "netif/xadapter.h"
+// netif/xemacpsif.h would give us the xemacpsif_s typedef directly, but
+// it pulls in lwIP-port-private headers (debug.h, xpqueue.h) that aren't
+// on the BSP public include path. We don't need the full struct — only
+// that XEmacPs is its first member, which the Xilinx port documents.
+// So we cast xemac->state straight to XEmacPs*.
 
 extern void lwip_sock_init(void);
 extern void sys_init(void);
@@ -32,7 +37,6 @@ extern void tcp_init(void);
 #include "task.h"
 
 static struct netif s_netif;
-static XEmacPs      s_emac;
 
 // The Xilinx FreeRTOS port (freertos10_xilinx) already initialises one
 // XScuGic instance and registers the IRQ exception vector. Reuse it via
@@ -42,8 +46,19 @@ static XEmacPs      s_emac;
 extern XScuGic xInterruptController;
 
 struct netif *net_get_netif(void)   { return &s_netif; }
-XEmacPs      *net_get_xemacps(void) { return &s_emac; }
 XScuGic      *net_get_gic(void)     { return &xInterruptController; }
+
+// xemac_add() owns the real XEmacPs — it lives as the first member of
+// xemacpsif_s, reached via netif->state (struct xemac_s *) → xemac->state.
+// Returning a separate static would give back an uninitialised struct and
+// XEmacPs_PhyRead would read garbage (the 0x0000 PHYID we saw in v1).
+XEmacPs *net_get_xemacps(void)
+{
+    if (!s_netif.state) return NULL;
+    struct xemac_s *xemac = (struct xemac_s *)s_netif.state;
+    if (!xemac->state)   return NULL;
+    return (XEmacPs *)xemac->state;     /* XEmacPs is xemacpsif_s's 1st field */
+}
 
 static void main_thread(void *arg)
 {
