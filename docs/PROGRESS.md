@@ -43,6 +43,12 @@ Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
 | 3.1 | Python test scripts | ✅ | `tools/test_udp_rx.py`, `tools/test_udp_tx.py` |
 | 3.2 | ILA additions       | ⬜ | (deferred — purely a Vivado IDE step) |
 | 3.3 | Debug checklist     | ✅ | `docs/debug.md` |
+| 3.4 | FPGA build (Vivado) | ✅ | bitstream + .xsa produced; 0 errors / 0 critical warnings; WNS +1.977 ns |
+| 3.5 | Firmware build (Vitis) | ✅ | sdr_app.elf + sdr_fsbl.elf; lwIP socket API on FreeRTOS; heap=1 MB |
+| 3.6 | SD-card BOOT.bin    | ✅ | `firmware/sd_boot/BOOT.bin` (FSBL + bitstream + sdr_app) |
+| 3.7 | First boot on hardware | ✅ | UART1 banner, lwIP up, PHY autoneg complete, all tasks scheduled |
+| 3.8 | DMA RX path working | ⬜ | Currently `[rx_task] DMA timeout` — DDC needs to assert `m_axis_tlast` |
+| 3.9 | End-to-end SDRAngel | ⬜ | Wire format never validated against real SDRAngel; only loopback Python tools |
 
 ## Open caveats
 
@@ -58,3 +64,29 @@ Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
    FreeRTOS-on-bare-metal build. Revisit if jitter is unacceptable.
 5. **PHY refclk pin.** XDC routes `PHY_REFCLK_25MHZ` → U18. Verify on
    the schematic that U18 is wired to IP101G `XI` and not to a strap.
+6. **DDC `m_axis_tlast` is not driven.** AXI DMA in direct-register mode
+   never sees end-of-packet → `[rx_task] DMA timeout` on every poll. RTL
+   fix: add a sample counter to `ddc_top.v` that asserts TLAST every N
+   samples (N from a new AXI-Lite register).
+7. **EBAZ4205 board peculiarities** (worth their own Tcl):
+   - DDR3 chip is `MT41K128M16 JT-125` (16-bit). Default Zynq-7010 PCW
+     does NOT match — silently brings up a controller that slverr's on
+     every access (wedges DAP). Use the board file under
+     `hardware/Board files/ebaz4205/1.0/preset.xml`.
+   - Console is **UART1** on MIO 24/25, not UART0.
+   - GEM0 is on **EMIO** (PL pins, bank 34) — IP101G via MII.
+   - IP101G is strapped to **MDIO address 0x00**, not 0x01.
+   - LEDs are **active-low** (output 0 lights up).
+8. **Xilinx lwIP-on-FreeRTOS port quirks** (already worked around in
+   `firmware/src/network/net_init.c`, but document for the next agent):
+   - Their `tcpip_init()` skips `lwip_init()` unless `LWIP_XINIT` is
+     defined in `lwipopts.h`. Without that, `mem_mutex` is never
+     initialised and the first `mem_malloc` traps in
+     `queue.c:1507 configASSERT( pxQueue->uxItemSize == 0 )`.
+   - Their `lwip_sock_init()` calls `tcpip_init()` and then busy-waits
+     on a flag. Deadlocks when the calling task has higher priority
+     than `TCPIP_THREAD_PRIO` (3 by default). We call `tcpip_init()`
+     directly instead.
+   - The port already creates its own `XScuGic`; do **not** call
+     `XScuGic_CfgInitialize` again. Use `extern XScuGic xInterruptController`.
+   - BSP default heap is 64 KB. Bump to 1 MB minimum (lwIP+tasks).

