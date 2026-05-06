@@ -9,7 +9,7 @@ boot the firmware. Each step should be passed before moving on.
 - [ ] EBAZ4205 powered (12 V), JTAG cable connected.
 - [ ] AD9226 add-on board on DATA3, DAC904 add-on board on DATA1+DATA2.
 - [ ] Ethernet cable from EBAZ4205 to host (or switch). Host has a route
-      to `192.168.1.100/24` (or you change `EBAZ_IP4_ADDR` in
+      to `192.168.2.100/24` (or you change `EBAZ_IP4_ADDR` in
       `firmware/src/network/net_init.h`).
 
 ## 1. UART comes up
@@ -25,7 +25,7 @@ Expected first output:
   ...
   DDC base: 0x43C00000   DUC base: 0x43C01000
 ====================================================
-[net] up: 192.168.1.100/255.255.255.0 gw=192.168.1.1
+[net] up: 192.168.2.100/255.255.255.0 gw=192.168.2.1
 [ip101g] PHYID = 0243:c8a0    ; or similar IC+ ID
 [ip101g] BMSR = ... LINK_UP
 [dma] init OK; rx=...
@@ -43,8 +43,8 @@ reaching the pad — verify XDC, MMCM placement, and `make_bd_pins_external`.
 ## 2. Network reachable
 
 ```
-host$ ping 192.168.1.100      # answers within ~1 ms
-host$ curl http://192.168.1.100:8888/sdrangel
+host$ ping 192.168.2.100      # answers within ~1 ms
+host$ curl http://192.168.2.100:8888/sdrangel
 {"name":"EBAZ4205","version":"1.0","streamRate":1000000,...}
 ```
 
@@ -76,7 +76,7 @@ Drive a clean tone into the AD9226 (e.g. an HP signal generator at
 7.0 MHz, −20 dBm). Set the device:
 
 ```
-curl -X PATCH http://192.168.1.100:8888/sdrangel/deviceset/0/device/settings \
+curl -X PATCH http://192.168.2.100:8888/sdrangel/deviceset/0/device/settings \
      -d '{"centerFrequency":7000000,"log2Decim":5}'
 ```
 
@@ -100,7 +100,7 @@ tone shows at +fs/4 instead of 0 → NCO frequency word miscalculation.
 
 In SDRAngel:
 
-1. **Remote Source** device → set `Address: 192.168.1.100`, `Port: 9090`.
+1. **Remote Source** device → set `Address: 192.168.2.100`, `Port: 9090`.
 2. Add a Remote Output channel, point it at the EBAZ port for the
    transmit path.
 3. Verify spectrum / waterfall.

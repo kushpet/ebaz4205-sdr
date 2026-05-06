@@ -5,7 +5,7 @@
 #include "lwip/ip4_addr.h"
 
 // Configure remote endpoint that will receive the IQ stream from this
-// device. Defaults: 192.168.1.10:9090 (set in rx_task.c).
+// device. Defaults: 192.168.2.10:9090 (set in rx_task.c).
 void rx_task_set_dest(const ip4_addr_t *ip, uint16_t port);
 
 // Spawn the RX-path FreeRTOS task. Runs forever; call after net_init().

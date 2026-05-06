@@ -55,7 +55,7 @@ static void boot_task(void *arg)
 
     // Where to send the IQ stream (host PC running SDRAngel)
     ip4_addr_t host;
-    IP4_ADDR(&host, 192, 168, 1, 10);
+    IP4_ADDR(&host, 192, 168, 2, 10);
     rx_task_set_dest(&host, 9090);
 
     // Spawn workers

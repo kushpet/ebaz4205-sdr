@@ -18,9 +18,9 @@
 
 // Static IP. Set EBAZ_USE_DHCP to 1 to obtain via DHCP instead.
 #define EBAZ_USE_DHCP   0
-#define EBAZ_IP4_ADDR   "192.168.1.100"
+#define EBAZ_IP4_ADDR   "192.168.2.100"
 #define EBAZ_IP4_MASK   "255.255.255.0"
-#define EBAZ_IP4_GW     "192.168.1.1"
+#define EBAZ_IP4_GW     "192.168.2.1"
 
 // Bring up GEM0, register the lwIP interface, start the tcpip_thread.
 // Must be called from main() after platform_init().

@@ -2,6 +2,8 @@
 // Helpers for assembling/inspecting SDRAngel "Remote" wire blocks.
 
 #include "sdrangel_frame.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <string.h>
 
 // Standard CRC-32 table (poly 0xEDB88320, reflected).
@@ -51,8 +53,12 @@ void sdra_meta_fill(sdra_block_t *blk,
     m->nb_fec_blocks       = nb_fec_blocks;
     m->device_index        = 0;
     m->channel_index       = 0;
-    m->tv_sec              = 0;
-    m->tv_usec             = 0;
+    // SDRAngel divides by tv_sec/tv_usec deltas in its skew estimator;
+    // constant zeros trip a SIGFPE. Use FreeRTOS tick (1 kHz) as a
+    // monotonic substitute.
+    uint32_t tick_ms = (uint32_t)xTaskGetTickCount();
+    m->tv_sec              = tick_ms / 1000U;
+    m->tv_usec             = (tick_ms % 1000U) * 1000U;
 
     // CRC is over everything up to (but not including) the crc32 field
     m->crc32 = sdra_crc32(m, sizeof(*m) - sizeof(m->crc32));

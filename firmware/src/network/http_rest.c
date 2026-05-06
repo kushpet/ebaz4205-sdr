@@ -52,16 +52,20 @@ static void send_response(struct netconn *c,
                           const char     *status,
                           const char     *body)
 {
-    char hdr[160];
+    // Single buffer + single netconn_write so the FIN that follows
+    // netconn_close can't race a pending second write and truncate the
+    // last byte (Qt's parser then reports "unterminated object").
+    static char resp[1024];
     int  blen = (int)strlen(body);
-    int  hlen = snprintf(hdr, sizeof(hdr),
+    int  hlen = snprintf(resp, sizeof(resp),
         "HTTP/1.0 %s\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: %d\r\n"
         "Connection: close\r\n\r\n",
         status, blen);
-    netconn_write(c, hdr, hlen, NETCONN_COPY);
-    netconn_write(c, body, blen, NETCONN_COPY);
+    if (hlen < 0 || (size_t)hlen + (size_t)blen >= sizeof(resp)) return;
+    memcpy(resp + hlen, body, (size_t)blen);
+    netconn_write(c, resp, hlen + blen, NETCONN_COPY);
 }
 
 static void handle_one(struct netconn *c, const char *req, size_t len)
@@ -74,9 +78,20 @@ static void handle_one(struct netconn *c, const char *req, size_t len)
 
     if (!strncmp(req, "GET /sdrangel ", 14) ||
         !strncmp(req, "GET /sdrangel\r", 14)) {
+        // SWGInstanceSummaryResponse for SDRAngel v7.24.0. Field names
+        // and wrapping match swagger/.../include/Instance.yaml exactly:
+        // - devicesetlist is a wrapped object (NOT a top-level array)
+        // - logging uses dumpToFile (int), not consoleDump/fileDump bools
+        // - no top-level devicesetFocus (it lives inside devicesetlist)
         send_response(c, "200 OK",
-            "{\"name\":\"EBAZ4205\",\"version\":\"1.0\","
-             "\"streamRate\":1000000,\"deviceHwId\":\"EBAZ4205\"}");
+            "{\"appname\":\"EBAZ4205-SDR\",\"version\":\"1.0\","
+             "\"qtVersion\":\"5.15.0\",\"architecture\":\"armv7\","
+             "\"os\":\"FreeRTOS\",\"dspRxBits\":16,\"dspTxBits\":16,\"pid\":0,"
+             "\"logging\":{\"consoleLevel\":\"info\",\"fileLevel\":\"info\","
+                          "\"dumpToFile\":0,\"fileName\":\"\"},"
+             "\"devicesetlist\":{\"devicesetcount\":0,"
+                                 "\"devicesetfocus\":0,"
+                                 "\"deviceSets\":[]}}\n");
     } else if (!strncmp(req, "GET /sdrangel/deviceset/0/device/run", 36)) {
         char body_buf[128];
         snprintf(body_buf, sizeof(body_buf),

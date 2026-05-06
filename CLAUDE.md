@@ -81,7 +81,7 @@ DDC/DUC register offsets:
 ## Software stack (planned)
 
 - Vitis 2022.2 BSP (xilffs, lwIP-2.1, xilstandalone) + FreeRTOS 10
-- lwIP in `OS_MODE` with `tcpip_thread`, GEM0 MAC, static IP `192.168.1.100`
+- lwIP in `OS_MODE` with `tcpip_thread`, GEM0 MAC, static IP `192.168.2.100`
 - Tasks:
   - `rx_task` (priority 3): DMA S2MM → frame builder → cm256 → UDP TX
   - `tx_task` (priority 3): UDP RX → cm256 → frame parser → DMA MM2S

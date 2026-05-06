@@ -10,7 +10,7 @@ For each super-frame:
 No FEC for now.
 
 Usage:
-    ./test_udp_tx.py --host 192.168.1.100 --port 9090 \\
+    ./test_udp_tx.py --host 192.168.2.100 --port 9090 \\
                      --in tone.s16 --fs 1000000 --fc 7100000
 """
 
