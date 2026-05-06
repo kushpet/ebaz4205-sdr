@@ -1,5 +1,12 @@
 # Progress tracker
 
+> **Pivot 2026-05-06:** RemoteInput (UDP+cm256+HTTP REST) abandoned;
+> moving to SDRangel `RemoteTCPInput` over a single TCP socket — see
+> [`sdra-tcp-plan.md`](sdra-tcp-plan.md). Rows 2.6–2.11, 3.1, 3.3, 3.9
+> below describe deleted code; kept here only as bring-up history. The
+> FPGA pipeline (Phase 1), platform/DMA/lwIP-init (2.1–2.5), and
+> hardware bring-up (3.4–3.8) carry over unchanged.
+
 Live status of the v2 plan. ✅ done, ⚠ partial / has caveat, ⬜ pending.
 
 ## Phase 1 — FPGA (Vivado 2022.2)

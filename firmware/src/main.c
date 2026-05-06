@@ -4,8 +4,8 @@
 // Order of operations:
 //   1. Bare-metal hardware init (caches, MMU, UART)
 //   2. FreeRTOS scheduler boots a one-shot init task
-//   3. Init task: GIC -> lwIP/GEM0/IP101G -> DMA -> tasks (rx, tx, http)
-//   4. Init task self-deletes; the SDR runs entirely off the workers.
+//   3. Init task: GIC -> lwIP/GEM0/IP101G -> DMA -> sdra_tcp_server
+//   4. Init task self-deletes; the SDR runs off the TCP server task.
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -14,14 +14,13 @@
 #include "platform/axi_dma.h"
 #include "platform/ddc_ctrl.h"
 #include "network/net_init.h"
-#include "network/http_rest.h"
-#include "tasks/rx_task.h"
-#include "tasks/tx_task.h"
+#include "network/sdra_tcp_server.h"
 
-#include "lwip/ip4_addr.h"
 #include "xil_printf.h"
 
-// DMA channel handles shared with tasks/rx_task.c and tasks/tx_task.c.
+// DMA channel handles. Populated by ebaz_dma_init below; sdra_tcp_server
+// reads g_rx_chan to pump IQ. g_tx_chan is left initialised but unused
+// until the TX path is rebuilt.
 ebaz_dma_chan_t g_rx_chan;
 ebaz_dma_chan_t g_tx_chan;
 
@@ -30,10 +29,9 @@ static void boot_task(void *arg)
     (void)arg;
 
     // Networking first (creates the GIC + lwIP and runs GEM0 init in
-    // its own helper task). Block until the netif is administratively up
-    // so the workers spawned below don't send UDP before there's a route
-    // — that produced an [udp_tx] send err=-4 (ERR_RTE) storm during the
-    // ~5 s xemac_add auto-neg window.
+    // its own helper task). Block until the netif is administratively
+    // up so the TCP listener doesn't try to bind before there's a
+    // route.
     net_init();
     if (net_wait_up(8000) != 0)
         xil_printf("[boot] netif still down after 8 s — continuing\r\n");
@@ -45,7 +43,7 @@ static void boot_task(void *arg)
         return;
     }
 
-    // Default DSP settings: 7.1 MHz centre, R=30 (1 MS/s I/Q out)
+    // Default DSP settings: 7.1 MHz centre, R=30 (1 MS/s I/Q out).
     sdr_set_frequency(7100000);
     sdr_set_rate(30);
     duc_set_pd(0);
@@ -53,15 +51,8 @@ static void boot_task(void *arg)
     // Match TLAST burst to the DMA buffer: 64 KiB / 4 B per beat = 16384.
     ddc_set_samples_per_packet(EBAZ_DMA_BUF_BYTES / 4);
 
-    // Where to send the IQ stream (host PC running SDRAngel)
-    ip4_addr_t host;
-    IP4_ADDR(&host, 192, 168, 2, 10);
-    rx_task_set_dest(&host, 9090);
-
-    // Spawn workers
-    rx_task_start();
-    tx_task_start();
-    http_rest_start(8888);
+    // Serve SDRangel RemoteTCPInput on :1234 (rtl_tcp-compatible).
+    sdra_tcp_start(1234);
 
     xil_printf("[boot] SDR firmware ready\r\n");
     vTaskDelete(NULL);
