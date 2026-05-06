@@ -1,12 +1,11 @@
 // firmware/src/network/sdra_tcp_server.c
-// SDRangel RemoteTCPInput server (rtl_tcp-compatible).
+// SDRangel RemoteTCPInput server.
 //
-// Bind :1234, accept one client at a time, send the 12-byte RTL0
-// greeting, then ship DDC DMA buffers as a continuous byte stream.
-// The DMA wire format is 32-bit beats {Q[15:0], I[15:0]}; under the
-// RTL0 greeting SDRangel will misinterpret these as 8-bit unsigned
-// samples — the SDRA extended header in the next step fixes the
-// per-sample framing. For now we just need to see data move.
+// Bind :1234, accept one client at a time, send a 128-byte SDRA
+// metadata header, then ship DDC DMA buffers verbatim as little-
+// endian int16 I/Q pairs. SDMA's 32-bit beats are stored as
+// {I_lo, I_hi, Q_lo, Q_hi} in DDR by the AXI-Stream→DMA write,
+// which matches SDRangel's 16-bit mode wire format directly.
 // See docs/sdra-tcp-plan.md.
 
 #include "sdra_tcp_server.h"
@@ -17,21 +16,66 @@
 #include "task.h"
 #include "xil_printf.h"
 
+#include <string.h>
+
 extern ebaz_dma_chan_t g_rx_chan;
 
-// rtl_tcp greeting: 4-byte magic + uint32 BE tuner_type + uint32 BE
-// gain count. Tuner type 5 (R820T) is a generic stand-in that the
-// SDRangel plugin accepts; gain count 0 because we don't expose
-// hardware gain steps.
-static const uint8_t s_greeting[12] = {
-    'R', 'T', 'L', '0',
-    0x00, 0x00, 0x00, 0x05,
-    0x00, 0x00, 0x00, 0x00,
-};
+// Defaults match main.c boot_task: 7.1 MHz @ 1 MS/s I/Q (R=30 ⇒
+// 60 MHz / 30 / 2 = 1 MS/s). When step 5 wires in client commands
+// these become live and writable.
+static uint64_t s_freq_hz        = 7100000ULL;
+static uint32_t s_sample_rate_hz = 1000000U;
+
+static inline void be32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+static inline void be64(uint8_t *p, uint64_t v)
+{
+    be32(p,     (uint32_t)(v >> 32));
+    be32(p + 4, (uint32_t)v);
+}
+
+// Build the 128-byte SDRA greeting per
+// plugins/channelrx/remotetcpsink/remotetcpprotocol.h (v7.24.0).
+// Field offsets cross-checked against
+// remotetcpinputtcphandler.cpp::processMetaData. Big-endian.
+//
+//   [0..3]   "SDRA"
+//   [4]      uint32  device type (5 = RTLSDR_R820T — generic)
+//   [8]      uint64  centre frequency Hz
+//   [16]     uint32  LO PPM correction      (0)
+//   [20]     uint32  flags                  (0)
+//   [24]     uint32  device sample rate Hz
+//   [28]     uint32  log2 decimation        (0 — no host-side decim)
+//   [32]     int16×3 tuner / IF gains       (0)
+//   [40]     uint32  RF bandwidth           (0)
+//   [44]     uint32  input frequency offset (0)
+//   [48]     uint32  channel gain           (0)
+//   [52]     uint32  channel sample rate Hz
+//   [56]     uint32  sample bits            (16)
+//   [60]     uint32  protocol revision      (0 — skip rev≥1 fields)
+//   [64..127]                                reserved/zero
+static void build_sdra_meta(uint8_t out[128])
+{
+    memset(out, 0, 128);
+    out[0] = 'S'; out[1] = 'D'; out[2] = 'R'; out[3] = 'A';
+    be32(&out[4],  5);
+    be64(&out[8],  s_freq_hz);
+    be32(&out[24], s_sample_rate_hz);
+    be32(&out[52], s_sample_rate_hz);
+    be32(&out[56], 16);
+}
 
 static void serve_client(struct netconn *c)
 {
-    if (netconn_write(c, s_greeting, sizeof(s_greeting),
+    uint8_t meta[128];
+    build_sdra_meta(meta);
+    if (netconn_write(c, meta, sizeof(meta),
                       NETCONN_COPY) != ERR_OK)
         return;
 
