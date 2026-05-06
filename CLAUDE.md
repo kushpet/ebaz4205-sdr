@@ -13,6 +13,15 @@ Source plans: [`docs/ebaz4205-sdr-plan.md`](docs/ebaz4205-sdr-plan.md),
 [`docs/ebaz4205-sdr-plan-v2.md`](docs/ebaz4205-sdr-plan-v2.md) (the v2
 plan with DDC/DUC supersedes v1).
 
+**Active pivot — read first:** the network/protocol section of v2
+(RemoteInput: UDP + cm256 super-frames + HTTP REST) is abandoned.
+We now serve SDRangel's `RemoteTCPInput` over a single TCP socket.
+RX-first; TX deferred. See [`docs/sdra-tcp-plan.md`](docs/sdra-tcp-plan.md)
+for the wire format, file-by-file disposition (what to add / delete /
+keep), and incremental milestones. The "Software stack" and
+"Top-level architecture" diagrams below still describe the old
+RemoteInput design and will be updated when the pivot lands.
+
 ## Top-level architecture
 
 ```
