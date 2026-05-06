@@ -10,6 +10,7 @@
 
 #include "sdra_tcp_server.h"
 #include "../platform/axi_dma.h"
+#include "../platform/ddc_ctrl.h"
 
 #include "lwip/api.h"
 #include "FreeRTOS.h"
@@ -20,9 +21,9 @@
 
 extern ebaz_dma_chan_t g_rx_chan;
 
-// Defaults match main.c boot_task: 7.1 MHz @ 1 MS/s I/Q (R=30 ⇒
-// 60 MHz / 30 / 2 = 1 MS/s). When step 5 wires in client commands
-// these become live and writable.
+// Live state, mirrored into the SDRA header on each accept and updated
+// by client commands (setCenterFrequency / setSampleRate). Defaults
+// match main.c boot_task: 7.1 MHz @ 1 MS/s I/Q (R=30 ⇒ 60 MHz / 30 / 2).
 static uint64_t s_freq_hz        = 7100000ULL;
 static uint32_t s_sample_rate_hz = 1000000U;
 
@@ -71,15 +72,105 @@ static void build_sdra_meta(uint8_t out[128])
     be32(&out[56], 16);
 }
 
+// Client→server command frames are 5 bytes:
+//   [0]   command code (RemoteTCPProtocol::Command enum)
+//   [1..4] uint32 BE param
+// We honour only setCenterFrequency (0x01) and setSampleRate (0x02);
+// every other code is read and discarded so the byte stream stays in
+// sync.
+typedef struct {
+    uint8_t buf[5];
+    int     have;   // 0..5
+} cmd_acc_t;
+
+// Channel sample rate = 60 MHz / R / 2. Snap an arbitrary requested
+// rate to the nearest R ∈ {15, 30, 60, 120}.
+static uint8_t rate_hz_to_r(uint32_t hz)
+{
+    uint32_t r = (hz > 0) ? (30000000U / hz) : 30U;
+    if      (r <= 22)  return 15;
+    else if (r <= 45)  return 30;
+    else if (r <= 90)  return 60;
+    else               return 120;
+}
+
+static void apply_command(uint8_t cmd, uint32_t param)
+{
+    switch (cmd) {
+    case 0x01:  // setCenterFrequency
+        s_freq_hz = (uint64_t)param;
+        sdr_set_frequency((int32_t)param);
+        xil_printf("[sdra_tcp] freq <- %u Hz\r\n", (unsigned)param);
+        break;
+    case 0x02: {  // setSampleRate
+        uint8_t r = rate_hz_to_r(param);
+        s_sample_rate_hz = 30000000U / r;
+        sdr_set_rate(r);
+        xil_printf("[sdra_tcp] rate <- %u Hz (R=%u)\r\n",
+                   (unsigned)s_sample_rate_hz, (unsigned)r);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void cmd_ingest(cmd_acc_t *acc, const uint8_t *data, size_t len)
+{
+    while (len > 0) {
+        size_t take = (size_t)(5 - acc->have);
+        if (take > len) take = len;
+        memcpy(acc->buf + acc->have, data, take);
+        acc->have += (int)take;
+        data      += take;
+        len       -= take;
+        if (acc->have == 5) {
+            uint32_t p = ((uint32_t)acc->buf[1] << 24) |
+                         ((uint32_t)acc->buf[2] << 16) |
+                         ((uint32_t)acc->buf[3] << 8)  |
+                         ((uint32_t)acc->buf[4]);
+            apply_command(acc->buf[0], p);
+            acc->have = 0;
+        }
+    }
+}
+
+// Drain whatever the client has buffered. We flip the netconn into
+// non-blocking mode around the recv calls only, then restore blocking
+// before returning so the next netconn_write keeps its TCP-backpressure
+// semantics. Returns 0 on "no more data right now", -1 on close/error.
+//
+// The Xilinx lwip211 BSP is built with LWIP_SO_RCVTIMEO=0, so
+// netconn_set_recvtimeout doesn't link — this is the workaround.
+static int drain_commands(struct netconn *c, cmd_acc_t *acc)
+{
+    netconn_set_nonblocking(c, 1);
+    int rc = 0;
+    for (;;) {
+        struct netbuf *nb = NULL;
+        err_t e = netconn_recv(c, &nb);
+        if (e == ERR_WOULDBLOCK) break;
+        if (e != ERR_OK || !nb)  { rc = -1; break; }
+        void  *d;
+        u16_t  n;
+        if (netbuf_data(nb, &d, &n) == ERR_OK)
+            cmd_ingest(acc, (const uint8_t *)d, n);
+        netbuf_delete(nb);
+    }
+    netconn_set_nonblocking(c, 0);
+    return rc;
+}
+
 static void serve_client(struct netconn *c)
 {
-    uint8_t meta[128];
+    uint8_t   meta[128];
+    cmd_acc_t cmd_acc = { .have = 0 };
+
     build_sdra_meta(meta);
     if (netconn_write(c, meta, sizeof(meta),
                       NETCONN_COPY) != ERR_OK)
         return;
 
-    // Prime the ping-pong: first transfer fills slot `cur`.
     if (ebaz_dma_start(&g_rx_chan) != 0) {
         xil_printf("[sdra_tcp] dma_start failed\r\n");
         return;
@@ -88,24 +179,23 @@ static void serve_client(struct netconn *c)
     for (;;) {
         if (ebaz_dma_wait(&g_rx_chan, 1000) != 0) {
             xil_printf("[sdra_tcp] DMA timeout\r\n");
-            // Leave channel in best-effort state; let next client
-            // re-prime. (The DMA may still complete asynchronously,
-            // which is benign — the buffer just gets overwritten.)
-            return;
+            return;  // no transfer in flight — clean exit
         }
         void *ready = ebaz_dma_swap(&g_rx_chan);
         // Rearm the alternate slot immediately so the FPGA never stalls.
         ebaz_dma_start(&g_rx_chan);
 
         if (netconn_write(c, ready, EBAZ_DMA_BUF_BYTES,
-                          NETCONN_COPY) != ERR_OK) {
-            // Drain the in-flight transfer before returning so the
-            // next accept's prime sees a settled channel.
-            ebaz_dma_wait(&g_rx_chan, 1000);
-            ebaz_dma_swap(&g_rx_chan);
-            return;
-        }
+                          NETCONN_COPY) != ERR_OK)
+            break;
+        if (drain_commands(c, &cmd_acc) != 0)
+            break;
     }
+
+    // An armed transfer is still in flight; let it complete so the
+    // next accept's prime sees a settled channel.
+    ebaz_dma_wait(&g_rx_chan, 1000);
+    ebaz_dma_swap(&g_rx_chan);
 }
 
 static void sdra_tcp_task(void *arg)
