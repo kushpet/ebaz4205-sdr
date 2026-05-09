@@ -145,12 +145,30 @@ always @(posedge clk) begin
     end
 end
 
-// Pipeline stage 2: tree sum of 16 products + center term
+// Pipeline stage 2: tree sum of 16 products + center term.
+//
+// Two Verilog signedness traps live in this stage:
+//
+//   1. {x, y} concatenations are *unsigned* regardless of the
+//      operand types. When mixed with signed prod[k] in a `+`, the
+//      whole expression goes unsigned and each negative prod (35-bit
+//      signed bit pattern with bit 34 = 1) is reinterpreted as a
+//      large positive ~2^35 number. Sum-of-eight-negatives then
+//      lands near 2^38, sails through saturation, and the FIR pins
+//      to ±32767 on quiet input.
+//
+//   2. {tap[15], tap[15:1]} as a "manual >> 1 with sign" produces
+//      an unsigned 16-bit result; assigning it to `wire signed`
+//      zero-extends, so center_half ends up *positive* for negative
+//      taps (e.g. -1 → +65535).
+//
+// Cast the sign-extended concat with $signed for (1); use a real
+// arithmetic shift for (2).
 reg signed [B_ACC-1:0] acc;
 reg                    pipe2_valid;
 
-wire signed [B_IN-1:0] center_tap = sr[31];
-wire signed [B_IN:0]   center_half = {center_tap[B_IN-1], center_tap[B_IN-1:1]};  // >>1 with sign
+wire signed [B_IN-1:0] center_tap  = sr[31];
+wire signed [B_IN:0]   center_half = center_tap >>> 1;
 
 always @(posedge clk) begin
     if (!resetn) begin
@@ -158,7 +176,7 @@ always @(posedge clk) begin
     end else begin
         pipe2_valid <= pipe1_valid;
         if (pipe1_valid) begin
-            acc <= {{(B_ACC-B_IN-1){center_half[B_IN]}}, center_half} +
+            acc <= $signed({{(B_ACC-B_IN-1){center_half[B_IN]}}, center_half}) +
                    prod[ 0] + prod[ 1] + prod[ 2] + prod[ 3] +
                    prod[ 4] + prod[ 5] + prod[ 6] + prod[ 7] +
                    prod[ 8] + prod[ 9] + prod[10] + prod[11] +
