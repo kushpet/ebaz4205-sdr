@@ -167,18 +167,24 @@ always @(posedge clk) begin
     end
 end
 
-// Output rounding: B_ACC -> B_OUT (truncate with round-to-nearest)
+// Output rounding: B_ACC -> B_OUT (truncate with round-to-nearest).
+// Bit-slicing in Verilog returns *unsigned*, so rounded[B_ACC-1:SHIFT]
+// must be re-signed before comparison — otherwise small positive values
+// hit the negative-saturation branch (a slice of 0 looks "less than"
+// signed(0x8000) under the implicit unsigned promotion) and the FIR
+// pins to -32768 on quiet input.
 localparam SHIFT = 16;  // Q16 coefficient scale
-wire signed [B_ACC-1:0] rounded = acc + {{(B_ACC-1){1'b0}}, acc[SHIFT-1]};
+wire signed [B_ACC-1:0]       rounded = acc + {{(B_ACC-1){1'b0}}, acc[SHIFT-1]};
+wire signed [B_ACC-SHIFT-1:0] rounded_hi = rounded[B_ACC-1:SHIFT];
 always @(posedge clk) begin
     if (!resetn) begin
         dout <= {B_OUT{1'b0}}; dout_valid <= 1'b0;
     end else begin
         dout_valid <= pipe2_valid;
         if (pipe2_valid)
-            dout <= rounded[B_ACC-1:SHIFT] > $signed({1'b0,{(B_OUT-1){1'b1}}}) ?
+            dout <= rounded_hi > $signed({1'b0,{(B_OUT-1){1'b1}}}) ?
                     {1'b0,{(B_OUT-1){1'b1}}} :
-                    rounded[B_ACC-1:SHIFT] < $signed({1'b1,{(B_OUT-1){1'b0}}}) ?
+                    rounded_hi < $signed({1'b1,{(B_OUT-1){1'b0}}}) ?
                     {1'b1,{(B_OUT-1){1'b0}}} :
                     rounded[B_OUT+SHIFT-1:SHIFT];
     end
