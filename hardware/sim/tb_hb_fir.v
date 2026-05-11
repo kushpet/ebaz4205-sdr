@@ -46,7 +46,7 @@ task report(input [15:0] label_din);
              $signed(label_din),
              $signed(u_dut.sr[0]),  $signed(u_dut.sr[31]),
              $signed(u_dut.sr[62]),
-             $signed(u_dut.center_half),
+             $signed(u_dut.center_half_q),
              $signed(u_dut.prod[0]),  $signed(u_dut.prod[15]),
              $signed(u_dut.acc), $signed(u_dut.rounded_hi),
              $signed(dout));

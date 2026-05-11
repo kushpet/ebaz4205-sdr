@@ -147,6 +147,12 @@ end
 
 // Pipeline stage 2: tree sum of 16 products + center term.
 //
+// Split across two clock cycles (2a: 4 partial sums; 2b: combine with
+// center). The original single-cycle 16-way sum inferred a ~14-DSP-deep
+// adder chain that drove WNS = -12.6 ns at 60 MHz on the routed design
+// — the PS/AXI clock then never came up cleanly and the firmware never
+// printed a UART banner. Splitting gives each stage ≤ 4 adds in series.
+//
 // Two Verilog signedness traps live in this stage:
 //
 //   1. {x, y} concatenations are *unsigned* regardless of the
@@ -163,24 +169,55 @@ end
 //      taps (e.g. -1 → +65535).
 //
 // Cast the sign-extended concat with $signed for (1); use a real
-// arithmetic shift for (2).
+// arithmetic shift for (2). For the pipelined partials, pre-pad each
+// prod[k] to B_ACC bits via a `wire signed` so the partial-sum
+// expression stays signed without an inline concat.
+wire signed [B_ACC-1:0] pad_prod [0:15];
+genvar pp;
+generate
+    for (pp = 0; pp < 16; pp = pp + 1) begin : GEN_PAD_PROD
+        assign pad_prod[pp] =
+            {{(B_ACC-(B_IN+19)){prod[pp][B_IN+18]}}, prod[pp]};
+    end
+endgenerate
+
+// Stage 2a: four 4-way partial sums + carry center_tap alongside so the
+// final acc sees the same sr[31] the original single-cycle code did.
+reg signed [B_ACC-1:0] psum [0:3];
+reg signed [B_IN-1:0]  center_tap_q;
+reg                    pipe2a_valid;
+
+always @(posedge clk) begin
+    if (!resetn) begin
+        pipe2a_valid <= 1'b0;
+        center_tap_q <= {B_IN{1'b0}};
+        for (i = 0; i < 4; i = i + 1) psum[i] <= {B_ACC{1'b0}};
+    end else begin
+        pipe2a_valid <= pipe1_valid;
+        if (pipe1_valid) begin
+            center_tap_q <= sr[31];
+            psum[0] <= pad_prod[ 0] + pad_prod[ 1] + pad_prod[ 2] + pad_prod[ 3];
+            psum[1] <= pad_prod[ 4] + pad_prod[ 5] + pad_prod[ 6] + pad_prod[ 7];
+            psum[2] <= pad_prod[ 8] + pad_prod[ 9] + pad_prod[10] + pad_prod[11];
+            psum[3] <= pad_prod[12] + pad_prod[13] + pad_prod[14] + pad_prod[15];
+        end
+    end
+end
+
+// Stage 2b: 4 partial sums + center -> acc.
 reg signed [B_ACC-1:0] acc;
 reg                    pipe2_valid;
 
-wire signed [B_IN-1:0] center_tap  = sr[31];
-wire signed [B_IN:0]   center_half = center_tap >>> 1;
+wire signed [B_IN:0]   center_half_q = center_tap_q >>> 1;
 
 always @(posedge clk) begin
     if (!resetn) begin
         acc <= {B_ACC{1'b0}}; pipe2_valid <= 1'b0;
     end else begin
-        pipe2_valid <= pipe1_valid;
-        if (pipe1_valid) begin
-            acc <= $signed({{(B_ACC-B_IN-1){center_half[B_IN]}}, center_half}) +
-                   prod[ 0] + prod[ 1] + prod[ 2] + prod[ 3] +
-                   prod[ 4] + prod[ 5] + prod[ 6] + prod[ 7] +
-                   prod[ 8] + prod[ 9] + prod[10] + prod[11] +
-                   prod[12] + prod[13] + prod[14] + prod[15];
+        pipe2_valid <= pipe2a_valid;
+        if (pipe2a_valid) begin
+            acc <= $signed({{(B_ACC-B_IN-1){center_half_q[B_IN]}}, center_half_q}) +
+                   psum[0] + psum[1] + psum[2] + psum[3];
         end
     end
 end
