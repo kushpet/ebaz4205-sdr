@@ -29,6 +29,10 @@ static inline uint32_t ebaz_freq_to_word(int32_t fc_hz)
 void     ddc_set_frequency(int32_t fc_hz);
 void     ddc_set_decimation(uint8_t r);    // 15, 30, 60, 120
 uint32_t ddc_get_status(void);              // bit0 overflow, bit1 lock
+// Clear sticky min/max/ovf/lock bits in the status register. Write to
+// the status address (data ignored). Next status read shows the
+// envelope since this call.
+void     ddc_clear_sticky(void);
 // Number of 32-bit AXI-Stream beats between TLAST pulses; must equal the
 // AXI DMA buffer length (in samples) — direct-register mode needs TLAST
 // on the last beat to signal completion.

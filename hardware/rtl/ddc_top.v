@@ -66,22 +66,29 @@ assign s_axil_rdata   = axil_rdata_r;
 assign s_axil_rresp   = axil_rresp_r;
 assign s_axil_rvalid  = axil_rvalid_r;
 
+// One-cycle pulse fired when host writes to status reg (0x08). Used to
+// clear the sticky min/max/ovf/lock bits — the data value is ignored.
+reg sticky_clear;
+
 always @(posedge clk) begin
     if (!resetn) begin
         reg_nco_freq           <= 32'd0;
         reg_dec_rate           <= 7'd30;
         reg_samples_per_packet <= 32'd4096;
+        sticky_clear   <= 1'b0;
         axil_awready_r <= 1'b0;
         axil_wready_r  <= 1'b0;
         axil_bvalid_r  <= 1'b0;
         axil_bresp_r   <= 2'b00;
     end else begin
+        sticky_clear   <= 1'b0;
         axil_awready_r <= s_axil_awvalid & s_axil_wvalid & ~axil_awready_r;
         axil_wready_r  <= s_axil_awvalid & s_axil_wvalid & ~axil_wready_r;
         if (s_axil_awvalid && s_axil_wvalid && axil_awready_r && axil_wready_r) begin
             case (s_axil_awaddr[3:2])
                 2'b00: reg_nco_freq           <= s_axil_wdata;
                 2'b01: reg_dec_rate           <= s_axil_wdata[6:0];
+                2'b10: sticky_clear           <= 1'b1;
                 2'b11: reg_samples_per_packet <= s_axil_wdata;
                 default: ;
             endcase
@@ -264,6 +271,14 @@ always @(posedge clk) begin
         adc_max         <= 12'h000;
         otr_or_sticky   <= 1'b0;
         otr_live        <= 1'b0;
+    end else if (sticky_clear) begin
+        // Host write to status reg → reset envelope, keep tracking
+        overflow_sticky <= 1'b0;
+        lock_sticky     <= 1'b0;
+        adc_min         <= 12'hFFF;
+        adc_max         <= 12'h000;
+        otr_or_sticky   <= 1'b0;
+        otr_live        <= adc_totr;
     end else begin
         if (adc_totr & adc_tvalid)
             overflow_sticky <= 1'b1;

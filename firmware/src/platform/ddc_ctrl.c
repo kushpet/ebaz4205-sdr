@@ -18,6 +18,11 @@ uint32_t ddc_get_status(void)
     return Xil_In32(EBAZ_DDC_BASE + DDC_REG_STATUS);
 }
 
+void ddc_clear_sticky(void)
+{
+    Xil_Out32(EBAZ_DDC_BASE + DDC_REG_STATUS, 0);
+}
+
 void ddc_set_samples_per_packet(uint32_t n)
 {
     Xil_Out32(EBAZ_DDC_BASE + DDC_REG_SAMPLES_PER_PACKET, n);

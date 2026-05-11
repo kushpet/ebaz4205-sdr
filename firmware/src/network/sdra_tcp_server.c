@@ -208,6 +208,9 @@ static void serve_client(struct netconn *c)
                        ready,
                        (unsigned)u[0], (unsigned)u[1],
                        (unsigned)u[2], (unsigned)u[3]);
+            // Reset envelope so the next [dbg] line shows the window
+            // since this print, not worst-case since power-up.
+            ddc_clear_sticky();
         }
 
         if (netconn_write(c, ready, EBAZ_DMA_BUF_BYTES,
