@@ -48,6 +48,10 @@ static void boot_task(void *arg)
     sdr_set_rate(30);
     duc_set_pd(0);
 
+    // For DAC→ADC loopback debug, call duc_set_dac_test_mode(1) here;
+    // off by default so the DAC doesn't radiate the NCO carrier in-band
+    // during antenna RX testing.
+
     // Match TLAST burst to the DMA buffer: 64 KiB / 4 B per beat = 16384.
     ddc_set_samples_per_packet(EBAZ_DMA_BUF_BYTES / 4);
 

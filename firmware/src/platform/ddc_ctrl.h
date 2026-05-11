@@ -38,6 +38,9 @@ void     ddc_set_samples_per_packet(uint32_t n);
 void duc_set_frequency(int32_t fc_hz);
 void duc_set_interpolation(uint8_t r);
 void duc_set_pd(int on);
+// Debug: when on, DAC outputs offset-binary cos(2π·DUC_NCO·t) directly
+// (bypasses HB/CIC/mixer). Use for DAC→ADC loopback stimulus.
+void duc_set_dac_test_mode(int on);
 
 // Convenience: set both NCOs to the same frequency (transceiver mode)
 static inline void sdr_set_frequency(int32_t fc_hz)

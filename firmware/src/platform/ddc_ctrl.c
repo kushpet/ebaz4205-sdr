@@ -35,5 +35,14 @@ void duc_set_interpolation(uint8_t r)
 
 void duc_set_pd(int on)
 {
-    Xil_Out32(EBAZ_DUC_BASE + DUC_REG_DAC_CTRL, on ? 1U : 0U);
+    uint32_t v = Xil_In32(EBAZ_DUC_BASE + DUC_REG_DAC_CTRL);
+    v = (v & ~1U) | (on ? 1U : 0U);
+    Xil_Out32(EBAZ_DUC_BASE + DUC_REG_DAC_CTRL, v);
+}
+
+void duc_set_dac_test_mode(int on)
+{
+    uint32_t v = Xil_In32(EBAZ_DUC_BASE + DUC_REG_DAC_CTRL);
+    v = (v & ~(1U << 4)) | (on ? (1U << 4) : 0U);
+    Xil_Out32(EBAZ_DUC_BASE + DUC_REG_DAC_CTRL, v);
 }

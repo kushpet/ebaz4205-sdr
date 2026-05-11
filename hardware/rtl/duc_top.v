@@ -238,14 +238,26 @@ complex_mixer u_mixer (
 );
 
 // ============================================================
+// DAC test mode (reg_dac_ctrl[4]): drive DAC directly with offset-binary
+// cosine from the NCO. Bypasses the DMA/HB/CIC/mixer path so we can
+// stimulate the ADC via loopback. NCO frequency = whatever DUC NCO is
+// set to. Scale nco_cos (signed 18-bit, ±131071) into 14-bit offset
+// binary by inverting MSB after truncation: midscale = 0x2000.
+// ============================================================
+wire        dac_test_mode = reg_dac_ctrl[4];
+wire [13:0] dac_test_cos  = {~nco_cos[17], nco_cos[16:4]};
+wire [13:0] dac_mux_data  = dac_test_mode ? dac_test_cos : duc_out;
+wire        dac_mux_valid = dac_test_mode ? nco_valid   : mix_valid;
+
+// ============================================================
 // DAC interface (p.1.3 dac_if.v)
 // AXI-Lite: PD control from reg_dac_ctrl
 // ============================================================
 dac_if u_dac_if (
     .s_axis_aclk    (clk),
     .s_axis_aresetn (resetn),
-    .s_axis_tdata   ({2'b00, duc_out}),
-    .s_axis_tvalid  (mix_valid),
+    .s_axis_tdata   ({2'b00, dac_mux_data}),
+    .s_axis_tvalid  (dac_mux_valid),
     .s_axis_tready  (),
     .s_axil_awaddr  (4'd0), .s_axil_awvalid(1'b0),
     .s_axil_awready(), .s_axil_wdata(32'd0), .s_axil_wvalid(1'b0),
