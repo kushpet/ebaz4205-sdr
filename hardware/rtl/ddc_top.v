@@ -234,20 +234,47 @@ hb_fir_decimator u_hb_Q (
 );
 
 // ============================================================
-// Status register: bit0 overflow (sticky OTR), bit1 lock (sticky — set
-// once first hb_I sample appears so a polled read doesn't miss it).
+// Status register layout (RO, snapshot since reset):
+//   [0]      overflow_sticky  — OTR ever asserted
+//   [1]      lock_sticky      — first hb_I sample appeared
+//   [13:2]   adc_min[11:0]    — minimum raw ADC bus value (straight binary)
+//   [25:14]  adc_max[11:0]    — maximum raw ADC bus value (straight binary)
+//   [26]     otr_or_sticky    — OTR ever 1
+//   [27]     otr_live         — current OTR pin state (post-FF)
+// Raw ADC bus is recovered from m_axis_tdata by inverting the top bit
+// (adc_if XOR'd MSB before sign-extend to convert straight-binary → twos
+// complement). Quiet input → adc_min ≈ adc_max ≈ 0x800 (midscale).
+// A real input signal expands the range. (max − min) is a coarse RMS-ish
+// readout of signal amplitude at the ADC.
 // ============================================================
-reg overflow_sticky;
-reg lock_sticky;
+reg        overflow_sticky;
+reg        lock_sticky;
+reg [11:0] adc_min;
+reg [11:0] adc_max;
+reg        otr_or_sticky;
+reg        otr_live;
+
+wire [11:0] raw_adc = {~adc_tdata[15], adc_tdata[10:0]};
+
 always @(posedge clk) begin
     if (!resetn) begin
         overflow_sticky <= 1'b0;
         lock_sticky     <= 1'b0;
+        adc_min         <= 12'hFFF;
+        adc_max         <= 12'h000;
+        otr_or_sticky   <= 1'b0;
+        otr_live        <= 1'b0;
     end else begin
         if (adc_totr & adc_tvalid)
             overflow_sticky <= 1'b1;
         if (hb_I_valid & hb_Q_valid)
             lock_sticky     <= 1'b1;
+        otr_live <= adc_totr;
+        if (adc_tvalid) begin
+            if (raw_adc < adc_min) adc_min <= raw_adc;
+            if (raw_adc > adc_max) adc_max <= raw_adc;
+            otr_or_sticky <= otr_or_sticky | adc_totr;
+        end
     end
 end
 
@@ -255,7 +282,10 @@ always @(posedge clk) begin
     if (!resetn)
         reg_status <= 32'd0;
     else
-        reg_status <= {30'd0, lock_sticky, overflow_sticky};
+        reg_status <= {4'd0,
+                       otr_live, otr_or_sticky,
+                       adc_max, adc_min,
+                       lock_sticky, overflow_sticky};
 end
 
 // ============================================================

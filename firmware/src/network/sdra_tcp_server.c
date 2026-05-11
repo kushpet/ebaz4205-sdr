@@ -176,6 +176,7 @@ static void serve_client(struct netconn *c)
         return;
     }
 
+    int dbg_iter = 0;
     for (;;) {
         if (ebaz_dma_wait(&g_rx_chan, 1000) != 0) {
             xil_printf("[sdra_tcp] DMA timeout\r\n");
@@ -184,6 +185,30 @@ static void serve_client(struct netconn *c)
         void *ready = ebaz_dma_swap(&g_rx_chan);
         // Rearm the alternate slot immediately so the FPGA never stalls.
         ebaz_dma_start(&g_rx_chan);
+
+        // Debug: every ~100 buffers (~6.5 s at 1 MS/s, 64 KiB/buf),
+        // print decoded DDC status + first 4 raw DMA words. Status bit
+        // layout is documented in ddc_top.v.
+        if ((dbg_iter++ & 0x7F) == 0) {
+            const uint32_t *u  = (const uint32_t *)ready;
+            uint32_t st        = ddc_get_status();
+            unsigned ovf       = (st >>  0) & 0x1;
+            unsigned lock      = (st >>  1) & 0x1;
+            unsigned adc_min   = (st >>  2) & 0xFFF;
+            unsigned adc_max   = (st >> 14) & 0xFFF;
+            unsigned otr_or    = (st >> 26) & 0x1;
+            unsigned otr_live  = (st >> 27) & 0x1;
+            int      adc_range = (int)adc_max - (int)adc_min;
+            xil_printf("[dbg] ovf=%u lock=%u "
+                       "adc[min=%03x max=%03x range=%d] "
+                       "otr[or=%u live=%u]  "
+                       "buf=%p [0..3]=%08x %08x %08x %08x\r\n",
+                       ovf, lock, adc_min, adc_max, adc_range,
+                       otr_or, otr_live,
+                       ready,
+                       (unsigned)u[0], (unsigned)u[1],
+                       (unsigned)u[2], (unsigned)u[3]);
+        }
 
         if (netconn_write(c, ready, EBAZ_DMA_BUF_BYTES,
                           NETCONN_COPY) != ERR_OK)
