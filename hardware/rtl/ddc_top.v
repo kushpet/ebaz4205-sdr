@@ -305,12 +305,14 @@ module nco_direct (
 
     (* rom_style = "block" *)
     reg [35:0] sincos_lut [0:1023]; // [35:18]=cos, [17:0]=sin
-    integer i;
+    // Vivado synth drops $sin/$cos in initial blocks (warning Synth 8-311,
+    // "ignoring non-constant assignment in initial block"). The result is
+    // a LUT with no driver — reads return 0 forever, so the NCO outputs
+    // zero, and the whole DDC/DUC datapath multiplies by zero.
+    // Inline 1024 precomputed constants instead. Regenerate the include
+    // file via tools/gen_nco_lut.py if the LUT depth/scale ever changes.
     initial begin
-        for (i = 0; i < 1024; i = i + 1) begin
-            sincos_lut[i][17:0]  = $signed($rtoi($sin(2.0*3.14159265358979323846*i/1024.0)*131071.0));
-            sincos_lut[i][35:18] = $signed($rtoi($cos(2.0*3.14159265358979323846*i/1024.0)*131071.0));
-        end
+        `include "nco_lut_init.vh"
     end
 
     reg [9:0] lut_addr_r;
