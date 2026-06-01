@@ -95,17 +95,39 @@ always @(posedge clk) begin
     end
 end
 
-// --- Output rounding: truncate B_INT -> B_OUT ---
-localparam SHIFT = B_INT - B_OUT;  // 32
+// --- Output: R-aware slice, then saturate to B_OUT ---
+// CIC gain at runtime is R^N. The static slice [B_INT-1:B_INT-B_OUT]
+// is only properly scaled at R = R_MAX (worst-case bit growth was the
+// reason B_INT = B_IN + N*LOG2_RMAX). At lower R the slice drops the
+// MSBs that actually carry the signal — R=30 loses ~11 bits (~66 dB
+// in dout). Make the slice R-aware so dout swings into roughly the
+// int16 range regardless of decimation. Filter transients can briefly
+// overshoot the nominal range, so saturate rather than wrap.
+reg [5:0] cic_shift;
+always @(*) begin
+    case (decimation_r)
+        7'd15:   cic_shift = 6'd17;   // gain ≈ 2^19.5
+        7'd30:   cic_shift = 6'd22;   // gain ≈ 2^24.5
+        7'd60:   cic_shift = 6'd27;   // gain ≈ 2^29.5
+        default: cic_shift = 6'd32;   // R=120: gain ≈ 2^34.5
+    endcase
+end
+
 wire signed [B_INT-1:0] cic_out = comb_out[N-1];
-wire signed [B_INT-1:0] rounded = cic_out + {{(B_INT-1){1'b0}}, cic_out[SHIFT-1]};
+wire signed [B_INT-1:0] shifted = cic_out >>> cic_shift;
+wire signed [B_OUT-1:0] sat_pos = {1'b0, {(B_OUT-1){1'b1}}};   // +32767
+wire signed [B_OUT-1:0] sat_neg = {1'b1, {(B_OUT-1){1'b0}}};   // -32768
+wire signed [B_OUT-1:0] dout_w  =
+    (shifted > sat_pos) ? sat_pos :
+    (shifted < sat_neg) ? sat_neg :
+                          shifted[B_OUT-1:0];
 
 always @(posedge clk) begin
     if (!resetn) begin
         dout       <= {B_OUT{1'b0}};
         dout_valid <= 1'b0;
     end else if (comb_valid[N-1]) begin
-        dout       <= rounded[B_INT-1:SHIFT];
+        dout       <= dout_w;
         dout_valid <= 1'b1;
     end else
         dout_valid <= 1'b0;
